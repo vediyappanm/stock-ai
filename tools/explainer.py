@@ -1,0 +1,76 @@
+"""Natural-language explanation generator with compliance guardrails."""
+
+from __future__ import annotations
+
+from datetime import date
+from typing import Dict, List, Tuple
+
+from config.settings import settings
+from schemas.response_schemas import Prediction
+from tools.error_handler import ValidationError
+
+
+def _top_features(feature_importance: Dict[str, float], k: int = 3) -> List[Tuple[str, float]]:
+    return sorted(feature_importance.items(), key=lambda item: item[1], reverse=True)[:k]
+
+
+def _validate_compliance(text: str) -> None:
+    lowered = text.lower()
+    forbidden = [word for word in settings.forbidden_words if word in lowered]
+    if forbidden:
+        raise ValidationError(
+            f"Generated explanation contains restricted terminology: {', '.join(forbidden)}",
+            failed_step="EXPLAIN_RESULT",
+        )
+
+
+from tools.llm_client import llm_client
+
+def generate_explanation(
+    ticker: str,
+    exchange: str,
+    target_date: date,
+    prediction: Prediction,
+) -> str:
+    """Create educational explanation including top features and interval."""
+    top3 = _top_features(prediction.feature_importance, 3)
+    feature_text = ", ".join([f"{name} ({score:.3f})" for name, score in top3]) or "price trend features"
+
+    # Try LLM for professional narrative
+    system_prompt = "You are a professional quantitative research assistant. Provide concise, objective technical analysis."
+    user_prompt = f"""Generate a professional technical analysis summary for {ticker} ({exchange}).
+Target Date: {target_date.isoformat()}
+Predicted Price: {prediction.point_estimate:.2f}
+80% Confidence Interval: [{prediction.lower_bound:.2f}, {prediction.upper_bound:.2f}]
+Top Model Features: {feature_text}
+
+Guidelines:
+- Explain why these specific technical indicators (features) might be driving the prediction.
+- Maintain a neutral, educational tone.
+- Do NOT give financial advice.
+- Keep it under 100 words.
+"""
+    
+    explanation = ""
+    try:
+        explanation = llm_client.chat_completion(system_prompt, user_prompt, temperature=0.3, max_tokens=150)
+    except Exception:
+        explanation = ""
+
+    # Fallback to rule-based if LLM fails or is empty
+    if not explanation:
+        explanation = (
+            f"For {ticker} on {exchange}, the projected close for {target_date.isoformat()} is "
+            f"{prediction.point_estimate:.2f}, with an 80% interval of "
+            f"{prediction.lower_bound:.2f} to {prediction.upper_bound:.2f}. "
+            f"The strongest model signals were: {feature_text}. "
+            f"Outcome uncertainty can be significant because market behavior changes quickly. "
+        )
+
+    # Ensure disclaimer is always present
+    if settings.disclaimer not in explanation:
+        explanation += f"\n\n{settings.disclaimer}"
+
+    _validate_compliance(explanation)
+    return explanation
+

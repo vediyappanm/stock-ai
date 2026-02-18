@@ -1,0 +1,5 @@
+stock-agent> predict Predict AAPL tomorrow
+stock-agent> analyze AAPL NASDAQ
+stock-agent> backtest AAPL NASDAQ 30
+stock-agent> exit
+

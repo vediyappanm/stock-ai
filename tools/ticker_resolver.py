@@ -1,0 +1,147 @@
+"""Ticker symbol resolution and exchange suffix handling."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
+
+try:
+    import yfinance as yf
+    import logging
+    # Silence yfinance ubiquitous delisted warnings
+    logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+except Exception:  # pragma: no cover - optional dependency fallback
+    yf = None
+
+from config.settings import settings
+from schemas.response_schemas import ResolvedTicker
+from tools.error_handler import DataError, ValidationError
+
+
+_COMMON_ALIASES: Dict[str, str] = {
+    "RELIANCE": "RELIANCE",
+    "TCS": "TCS",
+    "INFOSYS": "INFY",
+    "HDFCBANK": "HDFCBANK",
+    "APPLE": "AAPL",
+    "TESLA": "TSLA",
+    "MICROSOFT": "MSFT",
+    "GOOGLE": "GOOGL",
+    "ALPHABET": "GOOGL",
+    "AMAZON": "AMZN",
+    "NVIDIA": "NVDA",
+    "META": "META",
+}
+
+
+@dataclass(frozen=True)
+class _Resolved:
+    base_ticker: str
+    exchange: str
+
+
+def _normalize_exchange(exchange: str | None) -> str:
+    resolved = (exchange or settings.default_exchange).strip().upper()
+    if resolved not in settings.supported_exchanges:
+        supported = ", ".join(settings.supported_exchanges)
+        raise ValidationError(
+            f"Unsupported exchange '{resolved}'. Supported: {supported}",
+            failed_step="RESOLVE_TICKER",
+        )
+    return resolved
+
+
+def _normalize_stock(stock: str) -> str:
+    cleaned = stock.strip()
+    if not cleaned:
+        raise ValidationError("Stock/ticker cannot be empty", failed_step="RESOLVE_TICKER")
+    return cleaned.upper().replace(" ", "")
+
+
+def apply_exchange_suffix(ticker: str, exchange: str) -> str:
+    """Apply exchange suffix according to configured mapping."""
+    suffix = settings.exchange_suffixes.get(exchange, "")
+    if suffix and not ticker.endswith(suffix):
+        return f"{ticker}{suffix}"
+    return ticker
+
+
+def _build_candidates(stock: str, exchange: str) -> List[_Resolved]:
+    base = _normalize_stock(stock)
+
+    candidates: List[_Resolved] = []
+    alias = _COMMON_ALIASES.get(base, base)
+    candidates.append(_Resolved(alias, exchange))
+
+    # If stock already includes known suffix, keep it and infer base.
+    if "." in base:
+        ticker_part = base.split(".", 1)[0]
+        candidates.append(_Resolved(ticker_part, exchange))
+
+    # Also try direct symbol for US exchanges.
+    if exchange in {"NYSE", "NASDAQ"} and alias != base:
+        candidates.append(_Resolved(base, exchange))
+
+    # De-duplicate while preserving order.
+    seen: set[Tuple[str, str]] = set()
+    unique: List[_Resolved] = []
+    for item in candidates:
+        key = (item.base_ticker, item.exchange)
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique
+
+
+def _ticker_exists(symbol: str) -> bool:
+    if yf is None:
+        # Offline fallback: accept plausible symbol shape.
+        return bool(symbol and symbol[0].isalnum())
+    try:
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period="5d", interval="1d")
+        return not hist.empty
+    except Exception:
+        return False
+
+
+def _suggestions(stock: str, exchange: str) -> List[str]:
+    normalized = _normalize_stock(stock)
+    suggestions = []
+    for key, value in _COMMON_ALIASES.items():
+        if normalized in key or key.startswith(normalized[:2]):
+            suggestions.append(apply_exchange_suffix(value, exchange))
+    return suggestions[:3]
+
+
+def resolve_ticker(stock: str, exchange: str | None = None) -> ResolvedTicker:
+    """
+    Resolve stock/company input into an exchange-qualified ticker symbol.
+    
+    Implements a multi-exchange fallback strategy:
+    1. Try the requested/default exchange.
+    2. If failed, sweep through other supported exchanges.
+    """
+    primary_exchange = _normalize_exchange(exchange)
+    
+    # Order: Primary first, then others
+    other_exchanges = [ex for ex in settings.supported_exchanges if ex != primary_exchange]
+    search_order = [primary_exchange] + other_exchanges
+
+    for current_exchange in search_order:
+        candidates = _build_candidates(stock, current_exchange)
+        for candidate in candidates:
+            full_symbol = apply_exchange_suffix(candidate.base_ticker, candidate.exchange)
+            if _ticker_exists(full_symbol):
+                return ResolvedTicker(
+                    ticker=candidate.base_ticker,
+                    exchange=candidate.exchange,
+                    full_symbol=full_symbol,
+                )
+
+    hints = _suggestions(stock, primary_exchange)
+    hint_text = f" Suggestions: {', '.join(hints)}." if hints else ""
+    raise DataError(
+        f"Could not resolve ticker '{stock}' on any supported exchange (checked: {', '.join(search_order)}).{hint_text}",
+        failed_step="RESOLVE_TICKER",
+    )

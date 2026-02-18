@@ -1,0 +1,98 @@
+# Environment Variables
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+ENV/
+env/
+.venv
+
+# Cache Directories
+.cache/
+cache/
+*.parquet
+*.json
+
+# Models
+models/
+*.pkl
+*.pth
+*.h5
+*.joblib
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*.ipynb
+
+# Logs
+*.log
+logs/
+
+# Documentation
+docs/_build/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre
+.pyre/
+
+# pytype
+.pytype/
+
+# Cython
+cython_debug/
+
+# Local Databases
+*.db
+
+# Temporary Folders
+.tmp/
+.kiro/
+.cache_test/
+.agent/
+full_output.json
+test_payload.json
