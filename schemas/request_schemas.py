@@ -22,6 +22,8 @@ def _normalize_exchange(value: Optional[str]) -> Optional[str]:
 class PredictRequest(BaseModel):
     """Prediction request supporting NL query or explicit parameters."""
 
+    model_config = {"protected_namespaces": ()}
+
     query: Optional[str] = Field(
         default=None,
         description="Natural language query, e.g. 'Predict AAPL tomorrow'.",

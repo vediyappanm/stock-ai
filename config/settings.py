@@ -3,7 +3,8 @@
 from typing import Dict, List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, field_validator
+import json
 
 
 class Settings(BaseSettings):
@@ -55,6 +56,7 @@ class Settings(BaseSettings):
         # Map environment variables to settings
         env_prefix="",
         case_sensitive=False,
+        protected_namespaces=(),
     )
 
     # Model Hyperparameters - XGBoost
@@ -163,6 +165,18 @@ class Settings(BaseSettings):
 
     # Alert Configuration
     enable_alerts: bool = False
+
+    @field_validator("cors_allowed_origins", "startup_stream_tickers", mode="before")
+    @classmethod
+    def parse_json_list(cls, v: Any) -> Any:
+        if isinstance(v, str) and (v.startswith("[") or v.startswith("{")):
+            try:
+                return json.loads(v)
+            except Exception:
+                return v
+        if isinstance(v, str) and "," in v:
+            return [i.strip() for i in v.split(",")]
+        return v
 
 
 settings = Settings()
