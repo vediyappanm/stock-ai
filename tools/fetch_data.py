@@ -5,11 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
+import logging
 import pandas as pd
 try:
     import yfinance as yf
 except Exception:  # pragma: no cover - optional dependency fallback
     yf = None
+
+logger = logging.getLogger(__name__)
 
 from stk_cache.cache_validator import get_cache_ttl
 from stk_cache.data_store import CacheManager
