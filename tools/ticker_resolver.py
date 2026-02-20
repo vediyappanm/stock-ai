@@ -157,10 +157,15 @@ def resolve_ticker(stock: str, exchange: str | None = None) -> ResolvedTicker:
     aliased = _COMMON_ALIASES.get(normalized)
     if aliased:
         preferred_exchange = _PREFERRED_EXCHANGE_BY_TICKER.get(aliased, primary_exchange)
-        if exchange is None and primary_exchange in {"NSE", "BSE"} and preferred_exchange in {"NYSE", "NASDAQ"}:
+        # If the requested exchange is NSE/BSE but the stock is clearly US-based (or vice versa), 
+        # and we couldn't verify the requested one, use the preferred one.
+        if primary_exchange in {"NSE", "BSE"} and preferred_exchange in {"NYSE", "NASDAQ"}:
+            target_exchange = preferred_exchange
+        elif primary_exchange in {"NYSE", "NASDAQ"} and preferred_exchange in {"NSE", "BSE"}:
             target_exchange = preferred_exchange
         else:
             target_exchange = primary_exchange
+            
         return ResolvedTicker(
             ticker=aliased,
             exchange=target_exchange,
