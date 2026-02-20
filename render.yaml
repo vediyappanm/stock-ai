@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: stock-ai
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: IS_DEV_MODE
+        value: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: GROQ_API_KEY
+        sync: false # Set this in Render dashboard
+      - key: FINNHUB_API_KEY
+        sync: false # Set this in Render dashboard
+      - key: CORS_ALLOWED_ORIGINS
+        value: '["https://stock-ai-app.onrender.com"]'

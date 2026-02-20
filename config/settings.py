@@ -11,10 +11,11 @@ class Settings(BaseSettings):
 
     # API Configuration
     api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    api_port: int = Field(default=8000, alias="PORT")
     cors_allowed_origins: List[str] = [
         "http://localhost:8000",
         "http://127.0.0.1:8000",
+        "https://stock-ai-app.onrender.com",  # Placeholder for user's eventual URL
     ]
     cors_allow_credentials: bool = True
     startup_basic_stream_enabled: bool = True
