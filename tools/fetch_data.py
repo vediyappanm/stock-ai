@@ -136,11 +136,23 @@ def fetch_ohlcv_data(
             auto_adjust=False,
             threads=False,
         )
+        
+        # Fallback to Ticker.history if download returns empty (common for some IP blocks or ticker types)
+        if raw.empty:
+            logger.info("yf.download returned empty for %s, trying Ticker.history fallback", ticker_symbol)
+            ticker_obj = yf.Ticker(ticker_symbol)
+            raw = ticker_obj.history(period=period, interval=interval)
+            
     except Exception as exc:
-        raise NetworkError(
-            f"Failed to fetch market data for {ticker_symbol}: {exc}",
-            failed_step="FETCH_DATA",
-        ) from exc
+        logger.warning("yf.download failed for %s, trying Ticker.history: %s", ticker_symbol, exc)
+        try:
+            ticker_obj = yf.Ticker(ticker_symbol)
+            raw = ticker_obj.history(period=period, interval=interval)
+        except Exception as inner_exc:
+            raise NetworkError(
+                f"Failed to fetch market data for {ticker_symbol}: {inner_exc}",
+                failed_step="FETCH_DATA",
+            ) from inner_exc
 
     clean = _normalize_ohlcv(raw)
     ttl = get_cache_ttl(exchange, datetime.now())
