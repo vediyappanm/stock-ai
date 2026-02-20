@@ -3,6 +3,7 @@
 from typing import Dict, List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
 
 
 class Settings(BaseSettings):
@@ -40,6 +41,20 @@ class Settings(BaseSettings):
 
     # Finnhub Configuration
     finnhub_api_key: str = ""
+
+    # Alpaca Configuration
+    alpaca_api_key_id: str = Field(default="", alias="APCA_API_KEY_ID")
+    alpaca_api_secret_key: str = Field(default="", alias="APCA_API_SECRET_KEY")
+    alpaca_paper: bool = Field(default=True, alias="APCA_PAPER")
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="allow",
+        # Map environment variables to settings
+        env_prefix="",
+        case_sensitive=False,
+    )
 
     # Model Hyperparameters - XGBoost
     xgb_n_estimators: int = 500
@@ -123,7 +138,7 @@ class Settings(BaseSettings):
 
     # Backtest Configuration
     default_backtest_days: int = 30
-    max_backtest_days: int = 90
+    max_backtest_days: int = 365
     min_backtest_days: int = 1
 
     # Compliance Configuration
@@ -147,12 +162,6 @@ class Settings(BaseSettings):
 
     # Alert Configuration
     enable_alerts: bool = False
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="allow",
-    )
 
 
 settings = Settings()

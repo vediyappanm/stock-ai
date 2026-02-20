@@ -19,6 +19,9 @@ except Exception:
     _HAS_ALPACA = False
     TradingClient = None
 
+# Import settings
+from config.settings import settings
+
 
 class AlpacaBroker:
     """Connect to Alpaca trading API (paper or live)."""
@@ -33,25 +36,27 @@ class AlpacaBroker:
         if not _HAS_ALPACA:
             raise ImportError("alpaca-py library required. Install: pip install alpaca-py")
 
-        self.api_key = os.environ.get("APCA_API_KEY_ID")
-        self.secret_key = os.environ.get("APCA_API_SECRET_KEY")
-        self.paper = paper
+        # Use settings first, fallback to environment variables
+        self.api_key = settings.alpaca_api_key_id or os.environ.get("APCA_API_KEY_ID")
+        self.secret_key = settings.alpaca_api_secret_key or os.environ.get("APCA_API_SECRET_KEY")
+        self.paper = paper or settings.alpaca_paper
 
         if not self.api_key or not self.secret_key:
             raise ValueError(
-                "Set APCA_API_KEY_ID and APCA_API_SECRET_KEY environment variables"
+                "Set alpaca_api_key_id and alpaca_api_secret_key in settings or "
+                "APCA_API_KEY_ID and APCA_API_SECRET_KEY environment variables"
             )
 
         # Connect
         self.client = TradingClient(
             api_key=self.api_key,
             secret_key=self.secret_key,
-            paper=paper
+            paper=self.paper
         )
 
         account = self.client.get_account()
         logger.info(
-            f"Connected to Alpaca {'PAPER' if paper else 'LIVE'} trading. "
+            f"Connected to Alpaca {'PAPER' if self.paper else 'LIVE'} trading. "
             f"Account: {account.account_number}, Cash: ${float(account.cash):,.2f}"
         )
 

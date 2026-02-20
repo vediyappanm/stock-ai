@@ -4,6 +4,7 @@
 import os
 import sys
 import logging
+import argparse
 from datetime import datetime, timedelta
 import time
 
@@ -18,6 +19,7 @@ from tools.position_sizing import kelly_criterion
 from pipelines.orchestrated_pipeline import execute_prediction_pipeline
 from schemas.request_schemas import PredictRequest
 from tools.model_monitor import get_global_monitor
+from config.settings import settings
 
 
 class PaperTradingManager:
@@ -211,23 +213,41 @@ class PaperTradingManager:
 def main():
     """Main deployment."""
 
+    parser = argparse.ArgumentParser(description="Deploy paper trading bot")
+    parser.add_argument("--tickers", type=str, default="NVDA,AMD", 
+                       help="Comma-separated list of tickers to trade")
+    parser.add_argument("--capital", type=float, default=100000,
+                       help="Initial capital")
+    parser.add_argument("--duration", type=int, default=48,
+                       help="Trading duration in hours")
+    
+    args = parser.parse_args()
+
     print("\n" + "=" * 70)
     print("ALPACA PAPER TRADING - LIVE DEPLOYMENT")
     print("=" * 70)
 
-    # Check env vars
-    if not os.environ.get("APCA_API_KEY_ID"):
-        print("\nERROR: Set APCA_API_KEY_ID environment variable")
+    # Check settings first, then environment variables
+    api_key = settings.alpaca_api_key_id or os.environ.get("APCA_API_KEY_ID")
+    if not api_key:
+        print("\nERROR: Set alpaca_api_key_id in settings or APCA_API_KEY_ID environment variable")
         print("Get free paper trading keys: https://alpaca.markets/")
         sys.exit(1)
 
     # Create manager
-    manager = PaperTradingManager(capital=100000, kelly_fraction=0.062)
+    manager = PaperTradingManager(capital=args.capital, kelly_fraction=0.062)
+
+    # Parse tickers
+    tickers = [t.strip().upper() for t in args.tickers.split(",")]
+    
+    print(f"\n🚀 Starting paper trading with:")
+    print(f"💰 Capital: ${args.capital:,.2f}")
+    print(f"📈 Tickers: {', '.join(tickers)}")
+    print(f"⏱️  Duration: {args.duration} hours")
 
     # Run trading loop
-    tickers = ["NVDA", "AMD"]
     try:
-        manager.run_trading_loop(tickers=tickers, duration_hours=48)
+        manager.run_trading_loop(tickers=tickers, duration_hours=args.duration)
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
     except Exception as e:

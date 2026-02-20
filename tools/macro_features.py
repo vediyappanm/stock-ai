@@ -24,25 +24,55 @@ def fetch_macro_features(start_date: str | None = None, end_date: str | None = N
         return pd.DataFrame()
 
     try:
-        # VIX: ^VIX (market volatility index)
-        vix = yf.download("^VIX", start=start_date, end=end_date, progress=False)
-        vix = vix[["Close"]].rename(columns={"Close": "VIX"}).reset_index()
+        # Download each symbol separately and handle multi-index columns
+        def download_and_clean(symbol: str, column_name: str):
+            data = yf.download(symbol, start=start_date, end=end_date, progress=False)
+            if data.empty:
+                return pd.DataFrame(columns=["Date", column_name])
+            
+            # Handle multi-index columns from yfinance
+            if isinstance(data.columns, pd.MultiIndex):
+                data = data.droplevel(1, axis=1)  # Remove ticker level
+            
+            # Extract Close price and reset index
+            if "Close" in data.columns:
+                result = data[["Close"]].copy()
+                result = result.rename(columns={"Close": column_name})
+                result = result.reset_index()
+                return result
+            else:
+                return pd.DataFrame(columns=["Date", column_name])
 
-        # 10Y Treasury: ^TNX
-        tnx = yf.download("^TNX", start=start_date, end=end_date, progress=False)
-        tnx = tnx[["Close"]].rename(columns={"Close": "Yield_10Y"}).reset_index()
+        # Download each macro indicator
+        vix = download_and_clean("^VIX", "VIX")
+        tnx = download_and_clean("^TNX", "Yield_10Y") 
+        tyx = download_and_clean("^TYX", "Yield_2Y")
+        irx = download_and_clean("^IRX", "FedRate")
 
-        # 2Y Treasury: ^TYX (for yield curve slope)
-        tyx = yf.download("^TYX", start=start_date, end=end_date, progress=False)
-        tyx = tyx[["Close"]].rename(columns={"Close": "Yield_2Y"}).reset_index()
+        # Start with VIX as base, then merge others
+        macro = vix.copy()
+        
+        if not tnx.empty:
+            macro = macro.merge(tnx, on="Date", how="outer")
+        else:
+            macro["Yield_10Y"] = 0.0
+            
+        if not tyx.empty:
+            macro = macro.merge(tyx, on="Date", how="outer")
+        else:
+            macro["Yield_2Y"] = 0.0
+            
+        if not irx.empty:
+            macro = macro.merge(irx, on="Date", how="outer")
+        else:
+            macro["FedRate"] = 0.0
 
-        # Fed Funds Rate: ^IRX (13-week T-bill as proxy)
-        irx = yf.download("^IRX", start=start_date, end=end_date, progress=False)
-        irx = irx[["Close"]].rename(columns={"Close": "FedRate"}).reset_index()
-
-        # Merge on Date
-        macro = vix.merge(tnx, on="Date", how="outer").merge(tyx, on="Date", how="outer").merge(irx, on="Date", how="outer")
         macro = macro.sort_values("Date").reset_index(drop=True)
+
+        # Ensure all required columns exist
+        for col in ["VIX", "Yield_10Y", "Yield_2Y", "FedRate"]:
+            if col not in macro.columns:
+                macro[col] = 0.0
 
         # Calculate yield curve slope (10Y - 2Y spread)
         macro["YieldCurveSlope"] = macro["Yield_10Y"] - macro["Yield_2Y"]

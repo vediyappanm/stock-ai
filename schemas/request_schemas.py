@@ -112,7 +112,7 @@ class BacktestRequest(BaseModel):
         default=None,
         description="NSE, BSE, NYSE, or NASDAQ. Defaults to NSE.",
     )
-    days: int = Field(default=settings.default_backtest_days, ge=1, le=90)
+    days: int = Field(default=settings.default_backtest_days, ge=1, le=365)
 
     @field_validator("ticker")
     @classmethod
