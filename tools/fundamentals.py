@@ -41,8 +41,14 @@ def get_fundamentals(ticker: str, exchange: str = "NSE") -> Dict[str, Any]:
     import httpx
     from config.settings import settings
     
+    import requests
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+    })
+    
     try:
-        stock = yf.Ticker(symbol)
+        stock = yf.Ticker(symbol, session=session)
         info = stock.info
         
         # Base result from yfinance
@@ -105,8 +111,14 @@ def get_financials_table(ticker: str, exchange: str = "NSE") -> List[Dict[str, A
     elif exchange == "BSE" and not ticker.endswith(".BO"):
         symbol = f"{ticker}.BO"
 
+    import requests
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+    })
+    
     try:
-        stock = yf.Ticker(symbol)
+        stock = yf.Ticker(symbol, session=session)
         # Fetch annual financials
         df = stock.financials
         if df is None or df.empty:

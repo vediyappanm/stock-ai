@@ -12,6 +12,15 @@ import warnings
 # Ensure root directory is in sys.path for cloud deployment
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+# Handle module renaming for Render environments (if any legacy imports persist)
+try:
+    import stk_cache
+    sys.modules['cache'] = stk_cache
+    import stk_models
+    sys.modules['models'] = stk_models
+except ImportError:
+    pass
+
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any, Iterable

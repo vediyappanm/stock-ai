@@ -108,10 +108,30 @@ def _ticker_exists(symbol: str) -> bool:
     if yf is None:
         # Offline fallback: accept plausible symbol shape.
         return bool(symbol and symbol[0].isalnum())
+    
     try:
-        ticker = yf.Ticker(symbol)
-        hist = ticker.history(period="5d", interval="1d")
-        return not hist.empty
+        # Use a custom session to avoid being blocked on common cloud IPs (Render/GCP)
+        import requests
+        session = requests.Session()
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+        })
+        
+        ticker = yf.Ticker(symbol, session=session)
+        # Search for a slightly longer window to confirm it's actually trading/active
+        hist = ticker.history(period="1mo", interval="1d")
+        
+        # Stricter check: Valid tickers should have multiple days of data
+        if len(hist) < 3:
+            return False
+            
+        # Ensure it has basic OHLCV columns and non-NaN values
+        required = {"Open", "High", "Low", "Close"}
+        if not required.issubset(hist.columns):
+            return False
+            
+        return not hist["Close"].dropna().empty
+        
     except Exception:
         return False
 

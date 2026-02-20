@@ -130,6 +130,12 @@ def fetch_ohlcv_data(
             failed_step="FETCH_DATA",
         )
 
+    import requests
+    session = requests.Session()
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+    })
+
     try:
         raw = yf.download(
             tickers=ticker_symbol,
@@ -138,18 +144,19 @@ def fetch_ohlcv_data(
             progress=False,
             auto_adjust=False,
             threads=False,
+            session=session,
         )
         
         # Fallback to Ticker.history if download returns empty (common for some IP blocks or ticker types)
         if raw.empty:
             logger.info("yf.download returned empty for %s, trying Ticker.history fallback", ticker_symbol)
-            ticker_obj = yf.Ticker(ticker_symbol)
+            ticker_obj = yf.Ticker(ticker_symbol, session=session)
             raw = ticker_obj.history(period=period, interval=interval)
             
     except Exception as exc:
         logger.warning("yf.download failed for %s, trying Ticker.history: %s", ticker_symbol, exc)
         try:
-            ticker_obj = yf.Ticker(ticker_symbol)
+            ticker_obj = yf.Ticker(ticker_symbol, session=session)
             raw = ticker_obj.history(period=period, interval=interval)
         except Exception as inner_exc:
             raise NetworkError(
