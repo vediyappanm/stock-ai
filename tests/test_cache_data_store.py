@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 from hypothesis import given, settings, strategies as st
 
-from cache.data_store import CacheManager, CachedData
+from stk_cache.data_store import CacheManager, CachedData
 
 
 def _workspace_tmp(name: str) -> str:

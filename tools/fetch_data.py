@@ -11,8 +11,8 @@ try:
 except Exception:  # pragma: no cover - optional dependency fallback
     yf = None
 
-from cache.cache_validator import get_cache_ttl
-from cache.data_store import CacheManager
+from stk_cache.cache_validator import get_cache_ttl
+from stk_cache.data_store import CacheManager
 from config.settings import settings
 from tools.error_handler import DataError, NetworkError
 

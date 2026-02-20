@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from hypothesis import given, settings, strategies as st
 
-from cache.cache_validator import is_market_hours, get_cache_ttl
+from stk_cache.cache_validator import is_market_hours, get_cache_ttl
 
 
 # ============================================================================
