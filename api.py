@@ -403,6 +403,7 @@ async def get_chart_data(
         )
 
     resolved = resolve_ticker(stock=ticker, exchange=exchange)
+    logger.info("Chart data request: %s (%s) => Resolved to %s on %s", ticker, exchange, resolved.ticker, resolved.exchange)
     ohlcv = fetch_ohlcv_data(
         ticker_symbol=resolved.full_symbol,
         exchange=resolved.exchange,

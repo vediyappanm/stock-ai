@@ -20,15 +20,25 @@ from config.settings import settings
 from tools.error_handler import DataError, NetworkError
 
 
-def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+def _normalize_ohlcv(df: pd.DataFrame, ticker: str = "Unknown") -> pd.DataFrame:
     if df.empty:
-        raise DataError("No OHLCV data returned for the requested ticker.", failed_step="FETCH_DATA")
+        raise DataError(f"No OHLCV data returned for ticker '{ticker}'.", failed_step="FETCH_DATA")
 
     clean = df.copy()
     
     # Handle MultiIndex columns from recent yfinance versions
     if isinstance(clean.columns, pd.MultiIndex):
-        clean.columns = [col[0] if isinstance(col, tuple) else col for col in clean.columns]
+        # Case 1: (Attribute, Ticker) -> take Attribute
+        # Case 2: (Ticker, Attribute) -> take Attribute
+        new_cols = []
+        for col in clean.columns:
+            if col[0] in ["Open", "High", "Low", "Close", "Volume", "Adj Close"]:
+                new_cols.append(col[0])
+            elif len(col) > 1 and col[1] in ["Open", "High", "Low", "Close", "Volume", "Adj Close"]:
+                new_cols.append(col[1])
+            else:
+                new_cols.append(col[0]) # Fallback
+        clean.columns = new_cols
         
     # Deduplicate columns if any exist (keep first)
     if not clean.columns.is_unique:
@@ -116,10 +126,13 @@ def fetch_ohlcv_data(
     cache = cache_manager or CacheManager(cache_dir=settings.cache_dir)
     key = f"{ticker_symbol}_{exchange}"
 
+    logger.info("Fetching OHLCV data for %s on %s (period=%s)", ticker_symbol, exchange, period)
+
     cached = cache.get(key)
     if cached is not None and cached.data is not None and not cached.data.empty:
         try:
-            return _normalize_ohlcv(cached.data)
+            logger.info("Found cached data for %s", key)
+            return _normalize_ohlcv(cached.data, ticker=ticker_symbol)
         except Exception:
             # If cached data is so corrupted it can't be normalized, fall through to re-download
             pass
@@ -164,7 +177,7 @@ def fetch_ohlcv_data(
                 failed_step="FETCH_DATA",
             ) from inner_exc
 
-    clean = _normalize_ohlcv(raw)
+    clean = _normalize_ohlcv(raw, ticker=ticker_symbol)
     ttl = get_cache_ttl(exchange, datetime.now())
     cache.set(key=key, data=clean, ttl_minutes=ttl)
     return clean

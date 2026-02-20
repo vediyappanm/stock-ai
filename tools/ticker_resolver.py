@@ -156,6 +156,8 @@ def resolve_ticker(stock: str, exchange: str | None = None) -> ResolvedTicker:
     2. If failed, sweep through other supported exchanges.
     """
     primary_exchange = _normalize_exchange(exchange)
+    logger = logging.getLogger(__name__)
+    logger.info("Resolving ticker for stock '%s' on primary exchange '%s'", stock, primary_exchange)
     
     # Order: Primary first, then others
     other_exchanges = [ex for ex in settings.supported_exchanges if ex != primary_exchange]
@@ -163,9 +165,11 @@ def resolve_ticker(stock: str, exchange: str | None = None) -> ResolvedTicker:
 
     for current_exchange in search_order:
         candidates = _build_candidates(stock, current_exchange)
+        logger.debug("Checking candidates for %s: %s", current_exchange, candidates)
         for candidate in candidates:
             full_symbol = apply_exchange_suffix(candidate.base_ticker, candidate.exchange)
             if _ticker_exists(full_symbol):
+                logger.info("Ticker resolved successfully: %s (%s) -> %s", stock, primary_exchange, full_symbol)
                 return ResolvedTicker(
                     ticker=candidate.base_ticker,
                     exchange=candidate.exchange,
