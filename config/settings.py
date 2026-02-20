@@ -73,10 +73,10 @@ class Settings(BaseSettings):
     lstm_hidden_size_2: int = 32
     lstm_dropout: float = 0.2
     lstm_sequence_length: int = 60
-    lstm_epochs_prod: int = 30
+    lstm_epochs_prod: int = 10
     lstm_epochs_dev: int = 3
     lstm_batch_size: int = 32
-    lstm_learning_rate: float = 0.001
+    lstm_learning_rate: float = 0.002
     lstm_random_state: int = 42
 
     # Ensemble Configuration

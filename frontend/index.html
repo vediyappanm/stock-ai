@@ -1,17 +1,22 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#f5f7fb" />
   <title>STK-ENGINE Dashboard</title>
-  <meta name="description" content="Production-grade stock intelligence dashboard with predictions, charts, scanners, and portfolio analytics." />
+  <meta name="description"
+    content="Production-grade stock intelligence dashboard with predictions, charts, scanners, and portfolio analytics." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&display=swap"
+    rel="stylesheet" />
   <link rel="stylesheet" href="static/styles.css" />
   <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 </head>
+
 <body>
   <a class="skip-link" href="#main-content">Skip to dashboard</a>
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
@@ -27,12 +32,18 @@
       </div>
     </div>
     <nav class="nav-tabs" role="tablist" aria-label="Main modules">
-      <button id="tab-btn-predict" class="tab-link active" role="tab" tabindex="0" aria-selected="true" aria-controls="tab-predict" data-tab="tab-predict">Predict</button>
-      <button id="tab-btn-scan" class="tab-link" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-scan" data-tab="tab-scan">Scanner</button>
-      <button id="tab-btn-analysis" class="tab-link" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-analysis" data-tab="tab-analysis">Analysis</button>
-      <button id="tab-btn-portfolio" class="tab-link" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-portfolio" data-tab="tab-portfolio">Portfolio</button>
-      <button id="tab-btn-watchlist" class="tab-link" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-watchlist" data-tab="tab-watchlist">Watchlist</button>
-      <button id="tab-btn-quant" class="tab-link" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-quant" data-tab="tab-quant">Quant</button>
+      <button id="tab-btn-predict" class="tab-link active" role="tab" tabindex="0" aria-selected="true"
+        aria-controls="tab-predict" data-tab="tab-predict">Predict</button>
+      <button id="tab-btn-scan" class="tab-link" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-scan"
+        data-tab="tab-scan">Scanner</button>
+      <button id="tab-btn-analysis" class="tab-link" role="tab" tabindex="-1" aria-selected="false"
+        aria-controls="tab-analysis" data-tab="tab-analysis">Analysis</button>
+      <button id="tab-btn-portfolio" class="tab-link" role="tab" tabindex="-1" aria-selected="false"
+        aria-controls="tab-portfolio" data-tab="tab-portfolio">Portfolio</button>
+      <button id="tab-btn-watchlist" class="tab-link" role="tab" tabindex="-1" aria-selected="false"
+        aria-controls="tab-watchlist" data-tab="tab-watchlist">Watchlist</button>
+      <button id="tab-btn-quant" class="tab-link" role="tab" tabindex="-1" aria-selected="false"
+        aria-controls="tab-quant" data-tab="tab-quant">Quant</button>
     </nav>
     <div class="navbar__status" id="system-status-pill">
       <span class="pulse-dot"></span>
@@ -83,6 +94,11 @@
               <span class="checkmark"></span>
               Include Sentiment
             </label>
+            <label class="custom-checkbox">
+              <input id="predict-research" type="checkbox" />
+              <span class="checkmark"></span>
+              Deep Research
+            </label>
           </div>
 
           <div class="action-row">
@@ -93,16 +109,16 @@
       </section>
 
       <section class="panel-block">
-        <h2 class="panel-header">Analyze</h2>
-        <form id="analyze-form" class="inline-form">
-          <input id="analyze-stock" type="text" placeholder="Ticker" required />
-          <select id="analyze-exchange">
+        <h2 class="panel-header">Deep Research</h2>
+        <form id="research-form" class="inline-form">
+          <input id="research-stock" type="text" placeholder="Ticker" required />
+          <select id="research-exchange">
             <option value="NSE">NSE</option>
             <option value="BSE">BSE</option>
             <option value="NYSE">NYSE</option>
             <option value="NASDAQ">NASDAQ</option>
           </select>
-          <button id="btn-analyze" type="submit" class="btn-small">Analyze</button>
+          <button id="btn-deep-research" type="submit" class="btn-small">Research</button>
         </form>
       </section>
 
@@ -262,7 +278,9 @@
               </tr>
             </thead>
             <tbody id="scanner-tbody">
-              <tr><td colspan="7" class="empty-cell">Ready to scan</td></tr>
+              <tr>
+                <td colspan="7" class="empty-cell">Ready to scan</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -296,7 +314,8 @@
         </div>
         <div class="table-container">
           <table class="data-table" id="portfolio-table">
-            <caption class="sr-only">Portfolio positions with quantity, average price, and live P and L tracking</caption>
+            <caption class="sr-only">Portfolio positions with quantity, average price, and live P and L tracking
+            </caption>
             <thead>
               <tr>
                 <th>Ticker</th>
@@ -309,7 +328,9 @@
               </tr>
             </thead>
             <tbody id="portfolio-tbody">
-              <tr><td colspan="7" class="empty-cell">No data</td></tr>
+              <tr>
+                <td colspan="7" class="empty-cell">No data</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -340,7 +361,9 @@
               </tr>
             </thead>
             <tbody id="watchlist-tbody">
-              <tr><td colspan="5" class="empty-cell">Watchlist empty</td></tr>
+              <tr>
+                <td colspan="5" class="empty-cell">Watchlist empty</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -390,7 +413,8 @@
     </section>
   </main>
 
-  <button class="chat-toggle" id="chat-toggle" type="button" aria-label="Open chat" aria-controls="chat-box" aria-expanded="false">Chat</button>
+  <button class="chat-toggle" id="chat-toggle" type="button" aria-label="Open chat" aria-controls="chat-box"
+    aria-expanded="false">Chat</button>
 
   <section class="chat-container hidden" id="chat-box" aria-label="Assistant chat" aria-hidden="true">
     <header class="chat-header">
@@ -413,4 +437,5 @@
   <script src="static/price_table_component.js?v=2"></script>
   <script src="static/app_enhancements.js?v=2"></script>
 </body>
+
 </html>

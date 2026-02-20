@@ -27,11 +27,11 @@ from tools.fundamentals import get_fundamentals, get_financials_table
 # explicitly via /api/research, not on every prediction (too slow).
 
 
-def execute_prediction_pipeline(request: PredictRequest) -> PredictResponse:
+def execute_prediction_pipeline(request: PredictRequest, research_data: Dict[str, Any] | None = None) -> PredictResponse:
     """
     Execute the strict six-step workflow and return full prediction response.
     """
-    context: MutableMapping[str, object] = {"request": request}
+    context: MutableMapping[str, object] = {"request": request, "research_data": research_data}
 
     def step_parse_query(ctx: MutableMapping[str, object]) -> None:
         req: PredictRequest = ctx["request"]  # type: ignore[assignment]
@@ -82,11 +82,13 @@ def execute_prediction_pipeline(request: PredictRequest) -> PredictResponse:
         parsed = ctx["parsed"]
         resolved = ctx["resolved"]
         prediction = ctx["prediction"]
+        research = ctx.get("research_data")
         explanation = generate_explanation(
             ticker=resolved.full_symbol,  # type: ignore[attr-defined]
             exchange=resolved.exchange,  # type: ignore[attr-defined]
             target_date=parsed.target_date,  # type: ignore[attr-defined]
             prediction=prediction,  # type: ignore[arg-type]
+            research_data=research,
         )
         ctx["explanation"] = explanation
 
@@ -199,52 +201,118 @@ class OrchestratedPredictionPipeline:
         model_type: str = "ensemble",
         include_backtest: bool = False,
         include_sentiment: bool = False,
+        include_research: bool = False,
     ) -> Dict[str, Any]:
         started = perf_counter()
         try:
             # 1. Resolve ticker
             from tools.symbol_utils import get_currency_symbol, get_market_label
+            from tools.cache import cache as _cache
             resolved = resolve_ticker(stock=stock_name, exchange=exchange)
+            cache_key = f"{resolved.full_symbol}_{resolved.exchange}"
 
-            # Research is NOT run here — it is expensive (30-60s) and is triggered
-            # on demand via POST /api/research. Catalysts default to [].
-            research_data = {}
-            catalysts = []
+            # ── 2. THREE-WAY PARALLEL EXECUTION ─────────────────────────────
+            from concurrent.futures import ThreadPoolExecutor, as_completed
 
-            # 2. Execute Prediction
-            request = PredictRequest(
-                ticker=stock_name,
-                exchange=exchange,
-                target_date=target_date,
-                model_type=model_type,
-                include_backtest=include_backtest,
-                # We handle sentiment manually here to pass catalysts, but we must respect the flag
-                include_sentiment=False, 
-            )
-            result = execute_prediction_pipeline(request)
-            status = workflow_orchestrator.get_workflow_status(result.workflow_id or "")
+            def run_pred(cached_research):
+                req = PredictRequest(
+                    ticker=stock_name,
+                    exchange=exchange,
+                    target_date=target_date,
+                    model_type=model_type,
+                    include_backtest=include_backtest,
+                    include_sentiment=False,
+                )
+                return execute_prediction_pipeline(req, research_data=cached_research)
 
-            # 3. Enhanced Sentiment Analysis - Always run if requested or if we have catalysts
-            sentiment_summary = None
-            if include_sentiment or len(catalysts) > 0:
+            def run_sent(catalysts):
+                if not include_sentiment and not catalysts:
+                    return None
                 from tools.sentiment import analyze_sentiment
                 try:
-                    sentiment_summary = analyze_sentiment(resolved.full_symbol, research_catalysts=catalysts)
+                    return analyze_sentiment(resolved.full_symbol, research_catalysts=catalysts)
                 except Exception as e:
-                    import logging
-                    logging.getLogger(__name__).error(f"Sentiment analysis failed: {e}")
+                    logger.error(f"Sentiment failed: {e}")
+                    return None
 
-            # 4. Final processing. Baseline fetch is non-critical and should not fail the request.
+            def run_research():
+                if not include_research:
+                    # Return cached if present, else empty
+                    return _cache.get(cache_key) or {}
+                try:
+                    from tools.researcher import researcher
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        result = loop.run_until_complete(
+                            researcher.deep_research_async(
+                                ticker=resolved.full_symbol,
+                                exchange=resolved.exchange,
+                            )
+                        )
+                        return result
+                    finally:
+                        loop.close()
+                except Exception as e:
+                    logger.error(f"Research failed: {e}")
+                    return _cache.get(cache_key) or {}
+
+            # Step 2a — Run research first (quick cache check) and prediction together
+            # Research runs in parallel with prediction. Sentiment uses research catalysts.
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                fut_research = executor.submit(run_research)
+                
+                # Get preliminary cached catalysts for sentiment immediately 
+                cached_cats = (_cache.get(cache_key) or {}).get("catalysts", [])
+                fut_sent = executor.submit(run_sent, cached_cats)
+                
+                # Prediction runs concurrently too - uses cached research initially
+                cached_research = _cache.get(cache_key) or {}
+                fut_pred = executor.submit(run_pred, cached_research)
+
+                # Collect results - research may finish first (cached) or last (live)
+                result = fut_pred.result()
+                research_data = fut_research.result()
+                sentiment_summary = fut_sent.result()
+
+            # 3. Update explanation with fresh research if we got new data
+            if include_research and research_data.get("synthesis"):
+                from tools.explainer import generate_explanation
+                from schemas.response_schemas import Prediction
+                try:
+                    pred_obj = Prediction(
+                        point_estimate=result.prediction,
+                        lower_bound=result.lower_bound,
+                        upper_bound=result.upper_bound,
+                        xgb_prediction=getattr(result, "xgb_prediction", 0),
+                        rf_prediction=getattr(result, "rf_prediction", 0),
+                        lstm_prediction=getattr(result, "lstm_prediction", 0),
+                        feature_importance={},
+                    )
+                    result.explanation = generate_explanation(
+                        ticker=resolved.full_symbol,
+                        exchange=resolved.exchange,
+                        target_date=result.target_date,
+                        prediction=pred_obj,
+                        research_data=research_data,
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not re-generate research-aware explanation: {e}")
+
+            status = workflow_orchestrator.get_workflow_status(result.workflow_id or "")
+
+            # 4. Baseline price for trend label
             baseline = result.prediction
             try:
                 ohlcv = fetch_ohlcv_data(ticker_symbol=resolved.full_symbol, exchange=resolved.exchange)
                 if not ohlcv.empty:
                     baseline = float(ohlcv.iloc[-1]["Close"])
             except Exception:
-                baseline = result.prediction
-            
+                pass
+
             duration = perf_counter() - started
-            
+
             return clean_payload({
                 "success": True,
                 "stock": stock_name,

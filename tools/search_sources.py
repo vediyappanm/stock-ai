@@ -48,7 +48,7 @@ async def search_duckduckgo(query: str, max_results: int = 5) -> list[dict]:
             return []
 
     try:
-        results = await asyncio.wait_for(asyncio.to_thread(_sync_search), timeout=10.0)
+        results = await asyncio.wait_for(asyncio.to_thread(_sync_search), timeout=3.0)  # Reduced from 10s
     except asyncio.TimeoutError:
         logger.debug(f"DDG search timeout for '{query}'")
         results = []

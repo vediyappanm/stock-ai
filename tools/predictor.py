@@ -152,26 +152,39 @@ def predict_price(
             loaded_from_cache = False
 
     if not loaded_from_cache:
-        # Train XGBoost
-        xgb_importance = xgb_model.train(indicators_df)
-        xgb_prediction = xgb_model.predict_next(indicators_df)
-        xgb_residual_std = 1.0 # Approximate
+        from concurrent.futures import ThreadPoolExecutor
         
-        # Train RF
-        rf_result = rf_model.train(indicators_df)
-        rf_prediction = rf_model.predict_next(indicators_df)
-        rf_residual_std = rf_result.residual_std
-        
-        # Train LSTM
-        lstm_model = LSTMModel()
-        lstm_result = lstm_model.train_and_predict(indicators_df)
-        lstm_prediction = lstm_result.prediction
-        lstm_residual_std = lstm_result.residual_std
+        def run_xgb():
+            logger.info("Training XGBoost...")
+            importance = xgb_model.train(indicators_df)
+            pred = xgb_model.predict_next(indicators_df)
+            return pred, 1.0, importance
+
+        def run_rf():
+            logger.info("Training Random Forest...")
+            res = rf_model.train(indicators_df)
+            pred = rf_model.predict_next(indicators_df)
+            return pred, res.residual_std, {}
+
+        def run_lstm():
+            logger.info("Training LSTM...")
+            model = LSTMModel()
+            res = model.train_and_predict(indicators_df)
+            return res.prediction, res.residual_std, model
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            fut_xgb = executor.submit(run_xgb)
+            fut_rf = executor.submit(run_rf)
+            fut_lstm = executor.submit(run_lstm)
+            
+            xgb_prediction, xgb_residual_std, xgb_importance = fut_xgb.result()
+            rf_prediction, rf_residual_std, _ = fut_rf.result()
+            lstm_prediction, lstm_residual_std, lstm_model_obj = fut_lstm.result()
 
         # Save
         xgb_model.model.save_model(str(paths.xgb_file))
         joblib.dump(rf_model.model, paths.rf_file)
-        lstm_model.save_checkpoint(paths.lstm_file)
+        lstm_model_obj.save_checkpoint(paths.lstm_file)
         
         feature_importance = xgb_importance # Primary
         

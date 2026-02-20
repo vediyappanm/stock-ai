@@ -31,24 +31,35 @@ def generate_explanation(
     exchange: str,
     target_date: date,
     prediction: Prediction,
+    research_data: Dict[str, Any] | None = None,
 ) -> str:
-    """Create educational explanation including top features and interval."""
+    """Create educational explanation including top features, interval, and research context."""
     top3 = _top_features(prediction.feature_importance, 3)
     feature_text = ", ".join([f"{name} ({score:.3f})" for name, score in top3]) or "price trend features"
 
+    # Integrate research if available
+    research_context = ""
+    if research_data and research_data.get("synthesis"):
+        research_context = f"\nFundamental Context: {research_data.get('synthesis')}"
+        if research_data.get("catalysts"):
+            cats = [c["catalyst"] if isinstance(c, dict) else str(c) for c in research_data.get("catalysts", [])[:3]]
+            research_context += f"\nKey Catalysts: {', '.join(cats)}"
+
     # Try LLM for professional narrative
-    system_prompt = "You are a professional quantitative research assistant. Provide concise, objective technical analysis."
+    system_prompt = "You are a professional quantitative research assistant. Provide concise, objective investment research analysis."
     user_prompt = f"""Generate a professional technical analysis summary for {ticker} ({exchange}).
 Target Date: {target_date.isoformat()}
 Predicted Price: {prediction.point_estimate:.2f}
 80% Confidence Interval: [{prediction.lower_bound:.2f}, {prediction.upper_bound:.2f}]
 Top Model Features: {feature_text}
+{research_context}
 
 Guidelines:
-- Explain why these specific technical indicators (features) might be driving the prediction.
+- Synthesize both the technical indicators and the fundamental research context.
+- Explain how catalysts might be impacting the price target.
 - Maintain a neutral, educational tone.
 - Do NOT give financial advice.
-- Keep it under 100 words.
+- Keep it under 110 words.
 """
     
     explanation = ""

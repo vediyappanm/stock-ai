@@ -663,12 +663,12 @@ function renderSummaryCards(payload) {
   const trend = pred.trend || "Neutral";
   const confidence = pred.confidence || "Medium";
 
-  // 1. Build Narrative
+  // 1. Build Narrative - Prioritize high-quality LLM explanation
   const exchange = payload.resolved_exchange || payload.exchange || state.activeExchange || "NSE";
   const symbol = getCurrencyCode(exchange) === "INR" ? "Rs " : "$";
   const companyName = fundamentals.name && fundamentals.name !== "N/A" ? fundamentals.name : (ticker || "N/A");
 
-  const narrativeText = `
+  const narrativeText = payload.explanation ? payload.explanation.replace(/\n/g, '<br>') : `
     ${companyName} (${ticker}), operating in the ${fundamentals.sector && fundamentals.sector !== 'N/A' ? fundamentals.sector : 'Global'} market, 
     has shown significant performance cues in the ${fundamentals.industry && fundamentals.industry !== 'N/A' ? fundamentals.industry : 'financial'} domain. 
     Our Neural Ensemble, synthesizing data across multiple regimes, projects a 
@@ -676,6 +676,11 @@ function renderSummaryCards(payload) {
     with a target price of <strong>${symbol}${predicted}</strong>. 
     ${fundamentals.summary && fundamentals.summary !== 'No summary available.' ? fundamentals.summary : 'Market dynamics suggest volatility with high-confidence signals detected in volume profiles.'}
   `;
+
+  // Update explanation view if it exists
+  if (elements.explanationView) {
+    elements.explanationView.innerHTML = payload.explanation || "";
+  }
 
   // 2. Main Result Template
   elements.summaryCards.innerHTML = `
@@ -1184,10 +1189,7 @@ async function runPrediction(quick = false, historyDays = null) {
   const button = quick ? byId("btn-quick") : byId("btn-predict");
   if (!button) return;
 
-  // Show loading state
   setButtonLoading(button, true, quick ? "Running quick..." : "Predicting...");
-
-  // Show skeleton loading UI
   if (typeof showLoadingSkeleton === 'function') {
     showLoadingSkeleton();
   } else {
@@ -1208,66 +1210,182 @@ async function runPrediction(quick = false, historyDays = null) {
     if (!stockEl) throw new Error("Input element 'predict-stock' not found.");
 
     const targetDate = dateEl?.value || null;
-
-    // Strip parenthetical annotations from exchange value
     let exchangeValue = exchEl ? exchEl.value : "NSE";
     exchangeValue = exchangeValue.replace(/\s*\([^)]*\)/g, '').trim();
 
-    // Client-side validation for ticker format
     const tickerValue = stockEl.value.trim().toUpperCase();
     if (!/^[A-Z0-9]+$/.test(tickerValue)) {
       throw new Error("Invalid ticker format. Please use alphanumeric characters only.");
     }
 
-    const payload = {
+    const includeResearch = byId("predict-research")?.checked || false;
+
+    // ── STEP 1: Fire prediction WITHOUT research for fast results ──────────
+    const fastPayload = {
       ticker: tickerValue,
       exchange: exchangeValue,
       target_date: targetDate && targetDate.trim() !== "" ? targetDate : null,
       model_type: modelEl ? modelEl.value : "ensemble",
       include_backtest: byId("predict-backtest")?.checked || false,
       include_sentiment: byId("predict-sentiment")?.checked || false,
+      include_research: false,  // Always false for the fast first pass
       history_days: historyDays || 500
     };
-    const data = await postJson(quick ? "/api/predict/quick" : "/api/predict", payload);
 
-    // Update state with current ticker before rendering
+    const data = await postJson(quick ? "/api/predict/quick" : "/api/predict", fastPayload);
+
     state.activeTicker = tickerValue;
     state.activeExchange = exchangeValue;
 
+    // Render prediction immediately
     renderSummaryCards(data);
     renderJSON(data);
-
-    // Load price data table for the correct ticker
     loadTickerData(tickerValue, exchangeValue);
+    setButtonLoading(button, false);
+
+    // ── STEP 2: Stream research in background if requested ─────────────────
+    if (includeResearch && !quick) {
+      _streamResearchIntoResult(tickerValue, exchangeValue);
+    }
+
   } catch (error) {
     renderError(error);
-  } finally {
     setButtonLoading(button, false);
   }
 }
 
-async function runAnalyze() {
-  const button = byId("btn-analyze");
-  if (!button) return;
-  setButtonLoading(button, true, "Analyzing...");
+/** Streams research via SSE and patches the live dashboard without re-rendering. */
+function _streamResearchIntoResult(ticker, exchange) {
+  // Inject a "Research Loading" placeholder into the existing result
+  const existing = elements.summaryCards.querySelector(".plx-result");
+  if (!existing) return;
+
+  let researchPanel = document.createElement("div");
+  researchPanel.id = "live-research-panel";
+  researchPanel.style.cssText = "margin-top:24px; border:1px solid var(--border); padding:16px; border-radius:8px; background:rgba(0,255,163,0.02);";
+  researchPanel.innerHTML = `
+    <div style="color:var(--accent); font-family:var(--font-data); font-size:0.8rem; margin-bottom:10px;">⚡ LIVE_RESEARCH_AGENT</div>
+    <div id="research-stream-log" style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-data);">
+      &gt; Connecting to research pipeline...
+    </div>
+  `;
+  existing.appendChild(researchPanel);
+
+  const logEl = document.getElementById("research-stream-log");
+  const url = `/api/research/stream?ticker=${ticker}&exchange=${exchange}`;
+  const es = new EventSource(url);
+
+  es.onmessage = (e) => {
+    const evData = JSON.parse(e.data);
+
+    if (evData.status === "complete") {
+      es.close();
+      const r = evData.result || {};
+      researchPanel.innerHTML = `
+        <div style="color:var(--accent); font-family:var(--font-data); font-size:0.8rem; margin-bottom:12px;">✅ RESEARCH_COMPLETE</div>
+        ${r.synthesis ? `<div style="font-size:0.92rem; line-height:1.65; margin-bottom:12px;">${r.synthesis}</div>` : ""}
+        ${(r.catalysts || []).length > 0 ? `
+          <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+            ${r.catalysts.map(c => {
+        const lbl = typeof c === 'object' ? (c.catalyst || JSON.stringify(c)) : c;
+        return `<div class="plx-badge" style="background:var(--bg-deep);">${lbl}</div>`;
+      }).join('')}
+          </div>` : ""}
+        ${(r.risks || []).length > 0 ? `
+          <div style="margin-top:8px; font-size:0.72rem; color:var(--danger);">
+            ⚠ RISKS: ${r.risks.slice(0, 3).map(rk => typeof rk === 'object' ? rk.risk : rk).join(' | ')}
+          </div>` : ""}
+        ${(r.headlines || []).length > 0 ? `
+          <div style="margin-top:8px; font-size:0.68rem; color:var(--text-muted);">
+            LATEST_INTEL: ${r.headlines.join(' | ')}
+          </div>` : ""}
+      `;
+      // Update full JSON view to include research
+      renderJSON({ ...window._lastPredictionData, research: r });
+    } else if (evData.status === "error") {
+      es.close();
+      researchPanel.innerHTML += `<div style="color:var(--danger);">&gt; Research unavailable: ${evData.message || "timeout"}</div>`;
+    } else {
+      const msg = evData.message || evData.status;
+      if (logEl) logEl.innerHTML += `<br>&gt; ${msg}`;
+    }
+  };
+
+  es.onerror = () => {
+    es.close();
+    if (researchPanel) researchPanel.innerHTML = `<div style="color:var(--danger); font-size:0.8rem;">&gt; Research stream interrupted.</div>`;
+  };
+}
+
+
+async function runDeepResearch() {
+  const button = byId("btn-deep-research");
+  const ticker = byId("research-stock")?.value.trim().toUpperCase();
+  const exchange = byId("research-exchange")?.value || "NSE";
+
+  if (!ticker || !button) return;
+
+  setButtonLoading(button, true, "Starting...");
+  elements.summaryCards.innerHTML = `
+    <div class="plx-result" style="grid-column: 1 / -1;">
+      <div class="plx-header">
+        <div class="plx-badge" style="background:var(--accent); color:var(--bg-deep);">LIVE_RESEARCH</div>
+        <h2 class="plx-company-name">Analyzing ${ticker}</h2>
+      </div>
+      <div id="research-progress" style="margin-top: 20px; font-family: var(--font-data);">
+        <div style="color: var(--accent); margin-bottom: 10px;">> Initializing Neural Pipeline...</div>
+      </div>
+    </div>
+  `;
+
+  const progressEl = byId("research-progress");
+
   try {
-    const stockEl = byId("analyze-stock");
-    const exchEl = byId("analyze-exchange");
-    if (!stockEl) throw new Error("Input 'analyze-stock' not found.");
+    const url = `/api/research/stream?ticker=${ticker}&exchange=${exchange}`;
+    const es = new EventSource(url);
 
-    const payload = {
-      ticker: stockEl.value.trim(),
-      exchange: exchEl ? exchEl.value : "NSE",
+    es.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      console.log("Research Stream:", data);
+
+      if (data.status === "complete") {
+        es.close();
+        setButtonLoading(button, false);
+        // Transform the research result into a format renderSummaryCards expects
+        const payload = {
+          success: true,
+          ticker: ticker,
+          exchange: exchange,
+          research: data.result,
+          fundamentals: {
+            name: data.result.ticker,
+            sector: "RESEARCH_INSIGHT",
+            summary: data.result.synthesis
+          },
+          prediction: { predicted_price: 0, trend: "N/A" }
+        };
+        renderSummaryCards(payload);
+        renderJSON(data.result);
+      } else if (data.status === "error") {
+        es.close();
+        renderError(data.message);
+        setButtonLoading(button, false);
+      } else {
+        const msg = data.message || `Executing: ${data.status}`;
+        const color = data.status.includes('done') || data.status === 'searching' ? 'var(--success)' : 'var(--accent)';
+        progressEl.innerHTML += `<div style="color: ${color}; margin-top: 5px;">> ${msg}</div>`;
+      }
     };
-    const data = await postJson("/api/analyze", payload);
-    renderSummaryCards(data);
-    renderJSON(data);
 
-    // Load price data table for the analyzed ticker
-    loadTickerData(payload.ticker, payload.exchange);
+    es.onerror = (err) => {
+      console.error("SSE Error:", err);
+      es.close();
+      setButtonLoading(button, false);
+      showToast("RESEARCH_LIMIT", "Research stream interrupted. Check terminal logs.", "danger");
+    };
+
   } catch (error) {
     renderError(error);
-  } finally {
     setButtonLoading(button, false);
   }
 }
@@ -1559,9 +1677,9 @@ function bindEvents() {
   });
   byId("btn-quick").addEventListener("click", () => runPrediction(true));
 
-  byId("analyze-form").addEventListener("submit", (event) => {
+  byId("research-form").addEventListener("submit", (event) => {
     event.preventDefault();
-    runAnalyze();
+    runDeepResearch();
   });
 
   byId("backtest-form").addEventListener("submit", (event) => {

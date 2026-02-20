@@ -221,6 +221,7 @@ async def predict(payload: PredictRequest):
         model_type=payload.model_type,
         include_backtest=payload.include_backtest,
         include_sentiment=payload.include_sentiment,
+        include_research=getattr(payload, 'include_research', False),
     )
 
 

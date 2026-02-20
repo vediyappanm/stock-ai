@@ -96,18 +96,20 @@ async def _step_collect_sources(
     Returns (sources, stats_dict)
     """
     queries = decompose_queries(ticker, exchange, company_name)
+    # Use only top 3 queries with 2 results each for speed (6 sources vs 15)
+    fast_queries = queries[:3]
 
-    # Run Finnhub, DDG multi-query, and SEC EDGAR in parallel (3 results per query for speed)
+    # Run Finnhub, DDG multi-query, and SEC EDGAR in parallel
     finnhub_task = fetch_finnhub_news(
         ticker, exchange, settings.finnhub_api_key or ""
     )
-    ddg_task = multi_query_search(queries, results_per_query=3)
+    ddg_task = multi_query_search(fast_queries, results_per_query=2)
     edgar_task = fetch_sec_edgar(ticker) if exchange in ("NYSE", "NASDAQ") else asyncio.sleep(0, result=[])
 
     try:
         finnhub_news, ddg_results, edgar_results = await asyncio.wait_for(
             asyncio.gather(finnhub_task, ddg_task, edgar_task),
-            timeout=25.0,
+            timeout=5.0,  # Reduced from 10s
         )
     except asyncio.TimeoutError:
         logger.warning(f"Source collection timed out for {ticker} — using partial results")
@@ -126,8 +128,13 @@ async def _step_collect_sources(
 
 
 async def _step_fetch_content(sources: list[dict]) -> list[dict]:
-    """Step 3: Parallel fetch with Jina fallback."""
-    return await fetch_all_parallel(sources)
+    """Step 3: Parallel fetch top 3 sources only for extreme speed."""
+    # Only fetch body for the top 3 items to save time
+    top_sources = sources[:3]
+    others = sources[3:]
+    
+    enriched = await fetch_all_parallel(top_sources)
+    return enriched + others
 
 
 def _step_build_chunks(sources: list[dict]) -> list[dict]:
@@ -136,7 +143,7 @@ def _step_build_chunks(sources: list[dict]) -> list[dict]:
 
 
 async def _step_rerank(
-    chunks: list[dict], ticker: str, exchange: str, top_k: int = 12
+    chunks: list[dict], ticker: str, exchange: str, top_k: int = 6  # Reduced from 12
 ) -> list[dict]:
     """Step 5: Semantic reranking."""
     query = f"{ticker} {exchange} stock market news earnings catalysts"

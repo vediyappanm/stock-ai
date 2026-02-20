@@ -13,9 +13,9 @@ import httpx
 logger = logging.getLogger(__name__)
 
 JINA_BASE = "https://r.jina.ai"
-REQUEST_TIMEOUT = 12
-MAX_CONCURRENT = 8
-MAX_CONTENT_CHARS = 3000
+REQUEST_TIMEOUT = 4        # Reduced from 12s — skip slow sources fast
+MAX_CONCURRENT = 5         # Reduced from 8 — avoid thundering herd
+MAX_CONTENT_CHARS = 1500   # Reduced from 3000 — enough signal, less noise
 
 
 async def _fetch_direct(client: httpx.AsyncClient, url: str) -> Optional[str]:

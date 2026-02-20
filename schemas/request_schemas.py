@@ -54,6 +54,10 @@ class PredictRequest(BaseModel):
         default=False,
         description="Include sentiment output.",
     )
+    include_research: bool = Field(
+        default=False,
+        description="Include deep research (Finnhub + EDGAR + LLM synthesis).",
+    )
     history_days: int = Field(
         default=500, # Default ~2 years of trading days
         description="Number of trading days to fetch for training/analysis.",
