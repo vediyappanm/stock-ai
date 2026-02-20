@@ -1,6 +1,6 @@
 """Centralized configuration for the AI Stock Analyst system."""
 
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
