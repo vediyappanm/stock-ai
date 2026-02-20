@@ -45,7 +45,7 @@ INDICATOR_COLUMNS = [
     "Return_1d", "Return_3d", "Return_5d",
     "Vol_10d", "Vol_20d",
     "Price_Diff_1d", "Price_Diff_5d", "Price_Momentum_20",
-    "VIX", "Yield_10Y", "FedRate"
+    "VIX", "Yield_10Y", "Yield_2Y", "FedRate", "YieldCurveSlope", "VIXMomentum"
 ]
 
 

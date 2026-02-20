@@ -19,6 +19,7 @@ from tools.macro_features import fetch_macro_features
 from tools.predictor import predict_price
 from tools.query_parser import parse_query
 from tools.sentiment import analyze_sentiment
+from tools.advanced_sentiment import earnings_signal, supply_chain_risk
 from tools.ticker_resolver import resolve_ticker
 from tools.workflow_orchestrator import workflow_orchestrator
 from tools.fundamentals import get_fundamentals, get_financials_table
@@ -112,7 +113,18 @@ def execute_prediction_pipeline(request: PredictRequest) -> PredictResponse:
 
     sentiment_result = None
     if req.include_sentiment:
+        # Basic + advanced sentiment
         sentiment_result = analyze_sentiment(resolved.full_symbol)
+        if sentiment_result and sentiment_result.headlines:
+            # Add earnings + supply chain signals
+            earnings_sig = earnings_signal(sentiment_result.headlines)
+            supply_chain_sig = supply_chain_risk(sentiment_result.headlines, resolved.full_symbol)
+
+            # Store as metadata
+            if not hasattr(sentiment_result, 'metadata'):
+                sentiment_result.metadata = {}
+            sentiment_result.metadata['earnings_signal'] = earnings_sig
+            sentiment_result.metadata['supply_chain_risk'] = supply_chain_sig
 
     response = PredictResponse(
         ticker=req.ticker or req.stock or resolved.full_symbol,
