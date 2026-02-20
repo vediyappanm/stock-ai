@@ -9,10 +9,10 @@ import numpy as np
 import pandas as pd
 
 from config.settings import settings
-from models.random_forest import FEATURE_COLUMNS, RandomForestModel
-from models.xgboost_model import XGBoostModel
-from models.lstm import LSTMModel
-from models.ensemble import combine_predictions
+from stk_models.random_forest import FEATURE_COLUMNS, RandomForestModel
+from stk_models.xgboost_model import XGBoostModel
+from stk_models.lstm import LSTMModel
+from stk_models.ensemble import combine_predictions
 from schemas.response_schemas import BacktestResult
 from tools.error_handler import DataError
 import logging

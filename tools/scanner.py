@@ -11,7 +11,7 @@ import pandas as pd
 from pydantic import BaseModel
 
 from config.settings import settings
-from models.random_forest import RandomForestModel
+from stk_models.random_forest import RandomForestModel
 from schemas.response_schemas import ScanResultItem
 from tools.fetch_data import fetch_ohlcv_data
 from tools.indicators import compute_indicators

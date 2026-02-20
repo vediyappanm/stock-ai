@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from hypothesis import given, settings, strategies as st
 
-from models.ensemble import combine_predictions
+from stk_models.ensemble import combine_predictions
 from tools.workflow_orchestrator import WorkflowOrchestrator
 
 

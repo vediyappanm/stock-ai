@@ -5,7 +5,13 @@ from __future__ import annotations
 import asyncio
 import datetime
 import logging
+import os
+import sys
 import warnings
+
+# Ensure root directory is in sys.path for cloud deployment
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any, Iterable

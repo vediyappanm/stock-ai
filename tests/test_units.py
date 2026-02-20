@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from models.ensemble import combine_predictions, compute_prediction_interval
+from stk_models.ensemble import combine_predictions, compute_prediction_interval
 from schemas.response_schemas import Prediction
 from tests.fixtures import create_synthetic_ohlcv
 from tools.explainer import generate_explanation

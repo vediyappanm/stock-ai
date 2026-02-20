@@ -13,10 +13,10 @@ import pandas as pd
 
 import logging
 from config.settings import settings
-from models.ensemble import combine_predictions, compute_prediction_interval
-from models.lstm import LSTMModel
-from models.random_forest import RandomForestModel
-from models.xgboost_model import XGBoostModel
+from stk_models.ensemble import combine_predictions, compute_prediction_interval
+from stk_models.lstm import LSTMModel
+from stk_models.random_forest import RandomForestModel
+from stk_models.xgboost_model import XGBoostModel
 from schemas.response_schemas import Prediction
 from tools.error_handler import ModelError
 
