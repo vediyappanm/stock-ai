@@ -99,16 +99,16 @@ def get_risk_impact_analysis(ticker: str, days: int = 120) -> Dict[str, Any]:
         # In a real app we'd iterate through bars, here we'll simplify
         strategy_equity = [100.0]
         in_pos = True
-        entry_price = close.iloc[0]
+        entry_price = float(close.iloc[0])
         
         for i in range(1, len(close)):
-            price = close.iloc[i]
-            prev_price = close.iloc[i-1]
-            current_atr = atr.iloc[i]
+            price = float(close.iloc[i])
+            prev_price = float(close.iloc[i-1])
+            current_atr = float(atr.iloc[i]) if not pd.isna(atr.iloc[i]) else 0.0
             
             if in_pos:
                 # Trailing stop logic
-                stop_price = close.iloc[:i].max() - (2 * current_atr)
+                stop_price = float(close.iloc[:i].max()) - (2 * current_atr)
                 if price < stop_price:
                     in_pos = False
                     # Gain from entry to prev price
@@ -125,12 +125,24 @@ def get_risk_impact_analysis(ticker: str, days: int = 120) -> Dict[str, Any]:
                     strategy_equity.append(strategy_equity[-1])
                 else:
                     strategy_equity.append(strategy_equity[-1])
+        
+        # Calculate VaR and Kelly Criterion
+        returns = close.pct_change().dropna()
+        var_95 = float(returns.quantile(0.05)) if len(returns) > 0 else 0.0
+        
+        # Simple Kelly Criterion approximation
+        win_rate = len(returns[returns > 0]) / len(returns) if len(returns) > 0 else 0.5
+        avg_win = float(returns[returns > 0].mean()) if len(returns[returns > 0]) > 0 else 0.0
+        avg_loss = abs(float(returns[returns < 0].mean())) if len(returns[returns < 0]) > 0 else 0.0
+        kelly_fraction = (win_rate / avg_loss - (1 - win_rate) / avg_win) if avg_loss > 0 and avg_win > 0 else 0.0
                     
         return {
             "buy_and_hold": bh_returns.tolist(),
             "risk_managed": strategy_equity,
             "bh_final": float(bh_returns.iloc[-1]),
-            "st_final": float(strategy_equity[-1])
+            "st_final": float(strategy_equity[-1]),
+            "var_95": var_95,
+            "kelly_fraction": kelly_fraction
         }
     except Exception as e:
         print(f"Risk analysis error: {e}")

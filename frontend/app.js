@@ -38,6 +38,15 @@ const elements = {
   chatMessages: byId("chat-messages"),
   chatInput: byId("chat-input"),
   chatSend: byId("chat-send"),
+  announcer: byId("app-announcer"),
+  kpiSymbol: byId("kpi-symbol"),
+  kpiLivePrice: byId("kpi-live-price"),
+  kpiForecast: byId("kpi-forecast"),
+  kpiConfidence: byId("kpi-confidence"),
+  kpiTrend: byId("kpi-trend"),
+  kpiUpdated: byId("kpi-updated"),
+  forecastChartCanvas: byId("forecast-chart"),
+  volumeChartCanvas: byId("volume-chart"),
 };
 
 const state = {
@@ -50,11 +59,176 @@ const state = {
   riskImpactChart: null,
   wsInterval: null,
   activeTicker: null,
+  activeExchange: "NSE",
+  forecastChart: null,
+  volumeChart: null,
+  chartDataCache: new Map(),
+  chartRequestController: null,
+  realtimePaintAt: {},
 };
 
 // --- Core Utilities ---
 function pretty(value) {
   return JSON.stringify(value, null, 2);
+}
+
+function toFiniteNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function getCurrencyCode(exchange) {
+  return exchange === "NSE" || exchange === "BSE" ? "INR" : "USD";
+}
+
+function formatCurrency(value, exchange = "NSE") {
+  const num = toFiniteNumber(value, 0);
+  const currency = getCurrencyCode(exchange);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+  }).format(num);
+}
+
+function stampKpiUpdate() {
+  if (elements.kpiUpdated) {
+    elements.kpiUpdated.textContent = new Date().toLocaleTimeString();
+  }
+}
+
+function announceStatus(message) {
+  if (!elements.announcer) return;
+  elements.announcer.textContent = "";
+  // Force assistive tech to re-announce repeated status updates.
+  setTimeout(() => {
+    elements.announcer.textContent = message;
+  }, 20);
+}
+
+function getChartCacheKey(ticker, exchange, period) {
+  return `${String(ticker).toUpperCase()}|${String(exchange).toUpperCase()}|${String(period).toLowerCase()}`;
+}
+
+function updateDashboardKpis(payload = {}) {
+  if (!payload || payload.success === false) return;
+  const ticker = payload.ticker || payload.stock || state.activeTicker || "N/A";
+  const exchange = payload.resolved_exchange || payload.exchange || state.activeExchange || "NSE";
+  const prediction = payload.prediction || {};
+
+  if (elements.kpiSymbol) {
+    elements.kpiSymbol.textContent = `${ticker} (${exchange})`;
+  }
+  if (elements.kpiForecast) {
+    const predictedPrice = prediction.predicted_price ?? payload.prediction_value;
+    elements.kpiForecast.textContent = predictedPrice != null
+      ? formatCurrency(predictedPrice, exchange)
+      : "--";
+  }
+  if (elements.kpiConfidence) {
+    elements.kpiConfidence.textContent = prediction.confidence || "Medium";
+  }
+  if (elements.kpiTrend) {
+    const trend = prediction.trend || "Neutral";
+    elements.kpiTrend.textContent = trend;
+    elements.kpiTrend.classList.remove("cell-positive", "cell-negative");
+    if (trend === "Bullish") elements.kpiTrend.classList.add("cell-positive");
+    if (trend === "Bearish") elements.kpiTrend.classList.add("cell-negative");
+  }
+  stampKpiUpdate();
+}
+
+function updateLivePriceKpi(price, exchange = "NSE") {
+  if (elements.kpiLivePrice) {
+    elements.kpiLivePrice.textContent = formatCurrency(price, exchange);
+  }
+  stampKpiUpdate();
+}
+
+function destroyChartInstance(chartInstanceKey) {
+  if (state[chartInstanceKey]) {
+    state[chartInstanceKey].destroy();
+    state[chartInstanceKey] = null;
+  }
+}
+
+function renderForecastBandChart(payload) {
+  if (!elements.forecastChartCanvas || typeof Chart === "undefined" || !payload || payload.success === false) return;
+  const prediction = payload.prediction || {};
+  const lower = toFiniteNumber(prediction.lower_bound, 0);
+  const mid = toFiniteNumber(prediction.predicted_price ?? payload.prediction_value, 0);
+  const upper = toFiniteNumber(prediction.upper_bound, 0);
+
+  destroyChartInstance("forecastChart");
+  state.forecastChart = new Chart(elements.forecastChartCanvas.getContext("2d"), {
+    type: "line",
+    data: {
+      labels: ["Lower", "Forecast", "Upper"],
+      datasets: [{
+        label: "Prediction Band",
+        data: [lower, mid, upper],
+        borderColor: "#1564ff",
+        backgroundColor: "rgba(21, 100, 255, 0.15)",
+        borderWidth: 2,
+        tension: 0.35,
+        pointRadius: 3,
+        fill: true,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: "#67749a" } },
+        y: {
+          ticks: { color: "#67749a" },
+          grid: { color: "rgba(188, 200, 232, 0.4)" },
+        },
+      },
+    },
+  });
+}
+
+function renderVolumeChart(ohlcv = []) {
+  if (!elements.volumeChartCanvas || typeof Chart === "undefined" || !Array.isArray(ohlcv) || ohlcv.length === 0) return;
+  const slice = ohlcv.slice(-20);
+  const labels = slice.map((row) => {
+    const rawDate = row.Date || row.date;
+    const date = new Date(rawDate);
+    return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  });
+  const values = slice.map((row) => toFiniteNumber(row.Volume ?? row.volume, 0));
+
+  destroyChartInstance("volumeChart");
+  state.volumeChart = new Chart(elements.volumeChartCanvas.getContext("2d"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "Volume",
+        data: values,
+        backgroundColor: "rgba(19, 143, 78, 0.35)",
+        borderColor: "#138f4e",
+        borderWidth: 1.2,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: "#67749a", maxTicksLimit: 6 } },
+        y: {
+          ticks: {
+            color: "#67749a",
+            callback: (value) => `${Math.round(Number(value) / 1000)}k`,
+          },
+          grid: { color: "rgba(188, 200, 232, 0.35)" },
+        },
+      },
+    },
+  });
 }
 
 function setButtonLoading(button, loading, text = "Loading...") {
@@ -63,9 +237,11 @@ function setButtonLoading(button, loading, text = "Loading...") {
     button.dataset.label = button.textContent;
     button.textContent = text;
     button.disabled = true;
+    button.setAttribute("aria-busy", "true");
   } else {
     button.textContent = button.dataset.label || button.textContent;
     button.disabled = false;
+    button.setAttribute("aria-busy", "false");
   }
 }
 
@@ -105,6 +281,34 @@ async function getJson(url) {
   return body;
 }
 
+async function getChartData(ticker, exchange = "NSE", period = "2y", { useCache = true } = {}) {
+  const cacheKey = getChartCacheKey(ticker, exchange, period);
+  if (useCache && state.chartDataCache.has(cacheKey)) {
+    return state.chartDataCache.get(cacheKey);
+  }
+
+  if (state.chartRequestController) {
+    state.chartRequestController.abort();
+  }
+  state.chartRequestController = new AbortController();
+
+  const response = await fetch(
+    `/api/chart-data/${encodeURIComponent(ticker)}?exchange=${encodeURIComponent(exchange)}&period=${encodeURIComponent(period)}`,
+    { signal: state.chartRequestController.signal }
+  );
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body.detail || body.error || `Request failed (${response.status})`);
+  }
+
+  state.chartDataCache.set(cacheKey, body);
+  if (state.chartDataCache.size > 24) {
+    const oldestKey = state.chartDataCache.keys().next().value;
+    if (oldestKey) state.chartDataCache.delete(oldestKey);
+  }
+  return body;
+}
+
 function renderError(error) {
   const message = typeof error === 'string' ? error : (error.message || JSON.stringify(error));
   elements.summaryCards.innerHTML = `
@@ -114,6 +318,12 @@ function renderError(error) {
     </div>
   `;
   elements.resultJson.textContent = message;
+  if (elements.kpiTrend) {
+    elements.kpiTrend.textContent = "Error";
+    elements.kpiTrend.classList.remove("cell-positive");
+    elements.kpiTrend.classList.add("cell-negative");
+  }
+  stampKpiUpdate();
 }
 
 function metricCard(label, value) {
@@ -130,8 +340,32 @@ function clearSummary() {
     state.equityChart.destroy();
     state.equityChart = null;
   }
+  destroyChartInstance("forecastChart");
   elements.btAnalytics.style.display = "none";
   elements.riskProtocol.style.display = "none";
+}
+
+function showLoadingSkeleton() {
+  elements.summaryCards.innerHTML = `
+    <div class="skeleton-card" style="grid-column: 1 / -1;">
+      <div class="skeleton-header">
+        <div class="skeleton-badge"></div>
+        <div class="skeleton-badge"></div>
+        <div class="skeleton-title"></div>
+      </div>
+      <div class="skeleton-text"></div>
+      <div class="skeleton-text"></div>
+      <div class="skeleton-grid">
+        <div class="skeleton-stat"></div>
+        <div class="skeleton-stat"></div>
+        <div class="skeleton-stat"></div>
+      </div>
+    </div>
+  `;
+
+  if (elements.tickerMeta) {
+    elements.tickerMeta.textContent = "// NEURAL_PROCESSING...";
+  }
 }
 
 function renderTVChart(ohlcvData) {
@@ -140,7 +374,15 @@ function renderTVChart(ohlcvData) {
   if (state.tvChart) {
     state.tvChart.remove();
   }
-  const chart = LightweightCharts.createChart(elements.tvChartContainer, {
+
+  // Get container dimensions
+  const container = elements.tvChartContainer;
+  const containerHeight = container.clientHeight || 380;
+  const containerWidth = container.clientWidth || 800;
+
+  const chart = LightweightCharts.createChart(container, {
+    width: containerWidth,
+    height: containerHeight,
     layout: {
       background: { type: 'solid', color: 'transparent' },
       textColor: '#888',
@@ -158,8 +400,17 @@ function renderTVChart(ohlcvData) {
       horzLine: { visible: true, labelVisible: true },
       vertLine: { visible: true, labelVisible: true, labelBackgroundColor: '#00ffa3' },
     },
-    localization: { priceFormatter: price => `₹${price.toFixed(2)}` },
+    localization: { priceFormatter: price => formatCurrency(price, state.activeExchange || "NSE") },
   });
+
+  // Handle window resize
+  const resizeObserver = new ResizeObserver(entries => {
+    if (entries.length === 0 || entries[0].target !== container) return;
+    const newWidth = container.clientWidth;
+    const newHeight = container.clientHeight || 380;
+    chart.applyOptions({ width: newWidth, height: newHeight });
+  });
+  resizeObserver.observe(container);
 
   const candlestickSeries = chart.addCandlestickSeries({
     upColor: '#00ffa3', downColor: '#ff2d55',
@@ -183,12 +434,47 @@ function renderTVChart(ohlcvData) {
     volume: d.Volume || 0
   })).sort((a, b) => a.time - b.time);
 
+  // Calculate SMAs
+  const calculateSMA = (data, period) => {
+    let result = [];
+    for (let i = 0; i < data.length; i++) {
+      if (i < period - 1) {
+        // Not enough data for SMA
+        continue;
+      }
+      let sum = 0;
+      for (let j = 0; j < period; j++) {
+        sum += data[i - j].close;
+      }
+      result.push({ time: data[i].time, value: sum / period });
+    }
+    return result;
+  };
+
+  const sma20Series = chart.addLineSeries({
+    color: '#ffcc00',
+    lineWidth: 2,
+    title: 'SMA 20',
+  });
+
+  const sma50Series = chart.addLineSeries({
+    color: '#00ccff',
+    lineWidth: 2,
+    title: 'SMA 50',
+  });
+
+  const sma20Data = calculateSMA(formattedData, 20);
+  const sma50Data = calculateSMA(formattedData, 50);
+
   candlestickSeries.setData(formattedData);
   volumeSeries.setData(formattedData.map(d => ({
     time: d.time,
     value: d.volume,
     color: d.close >= d.open ? 'rgba(0, 255, 163, 0.3)' : 'rgba(255, 45, 85, 0.3)'
   })));
+
+  sma20Series.setData(sma20Data);
+  sma50Series.setData(sma50Data);
 
   chart.timeScale().fitContent();
   state.tvChart = chart;
@@ -197,6 +483,11 @@ function renderTVChart(ohlcvData) {
 }
 
 function showToast(title, message, type = "info") {
+  if (!elements.toastContainer) return;
+  const activeToasts = elements.toastContainer.querySelectorAll(".toast");
+  if (activeToasts.length >= 5) {
+    activeToasts[0].remove();
+  }
   const toast = document.createElement("div");
   toast.className = `toast toast--${type}`;
   toast.innerHTML = `
@@ -207,6 +498,7 @@ function showToast(title, message, type = "info") {
     <div class="toast__msg">${message}</div>
   `;
   elements.toastContainer.appendChild(toast);
+  announceStatus(`${title}. ${message}`);
 
   // Auto remove after 5s
   setTimeout(() => {
@@ -224,6 +516,8 @@ function initWebSocket() {
   ws.onopen = () => {
     console.log("WebSocket connected to STK-STREAM");
     showToast("SYSTEM_CONNECTED", "Live telemetry stream established.", "info");
+    const statusText = byId("system-status-text");
+    if (statusText) statusText.textContent = "Stream Connected";
 
     // Pulse Heartbeat to prevent timeouts
     if (state.wsInterval) clearInterval(state.wsInterval);
@@ -235,18 +529,45 @@ function initWebSocket() {
   };
 
   ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-
-    if (data.type === "PRICE_UPDATE") {
-      state.realtimePrices[data.ticker] = data.price;
-      updateLiveUI(data.ticker, data.price, data.change_pct);
-    } else if (data.type === "ALERT") {
-      showToast(`ALERT: ${data.ticker}`, data.message, "warn");
+    // Handle plain text pong/ping responses BEFORE parsing
+    if (typeof event.data === 'string' && (event.data === "pong" || event.data === "ping")) {
+      return;
     }
+
+    try {
+      const data = JSON.parse(event.data);
+
+      // Handle pong as object
+      if (data === "pong" || data.type === "pong") {
+        return;
+      }
+
+      if (data.type === "PRICE_UPDATE") {
+        state.realtimePrices[data.ticker] = data.price;
+        updateLiveUI(data.ticker, data.price, data.change_pct);
+      } else if (data.type === "ALERT") {
+        showToast(`ALERT: ${data.ticker}`, data.message, "warn");
+      }
+    } catch (error) {
+      // Silently ignore parse errors in production
+      if (window.location.hostname === 'localhost') {
+        console.log("WebSocket parse error:", error.message);
+      }
+    }
+  };
+
+  ws.onerror = (error) => {
+    console.log("WebSocket error (expected during reconnect):", error);
   };
 
   ws.onclose = () => {
     console.log("WebSocket disconnected");
+    const statusText = byId("system-status-text");
+    if (statusText) statusText.textContent = "Stream Reconnecting";
+    if (state.wsInterval) {
+      clearInterval(state.wsInterval);
+      state.wsInterval = null;
+    }
     setTimeout(initWebSocket, 5000); // Reconnect
   };
 
@@ -254,38 +575,67 @@ function initWebSocket() {
 }
 
 function updateLiveUI(ticker, price, change) {
-  // Update Scanner Table if ticker exists
-  const rows = elements.scannerTbody.querySelectorAll("tr");
-  rows.forEach(row => {
-    const tickerCell = row.cells[0];
-    if (tickerCell && tickerCell.textContent === ticker) {
-      row.cells[1].textContent = price.toFixed(2);
-      const pctCell = row.cells[2];
+  const now = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+  const lastPaint = state.realtimePaintAt[ticker] || 0;
+  if (now - lastPaint < 120) {
+    return;
+  }
+  state.realtimePaintAt[ticker] = now;
+
+  updateLivePriceKpi(price, state.activeExchange || "NSE");
+
+  // Update Scanner row if present
+  const scanRow = elements.scannerTbody?.querySelector(`tr[data-ticker="${ticker}"]`);
+  if (scanRow) {
+    scanRow.cells[1].textContent = price.toFixed(2);
+    const pctCell = scanRow.cells[2];
+    if (pctCell) {
       pctCell.textContent = `${change.toFixed(2)}%`;
       pctCell.className = change >= 0 ? "cell-positive" : "cell-negative";
     }
-  });
+  }
 
-  // Update Portfolio if ticker exists
-  const portRows = elements.portTbody.querySelectorAll("tr");
-  portRows.forEach(row => {
-    if (row.cells[0].textContent === ticker) {
-      const currentPriceCell = row.cells[3];
-      const plCell = row.cells[4];
-      const avgPrice = parseFloat(row.cells[2].textContent);
+  // Update Portfolio row if present
+  const portRow = elements.portTbody?.querySelector(`tr[data-ticker="${ticker}"]`);
+  if (portRow) {
+    const currentPriceCell = portRow.cells[3];
+    const plCell = portRow.cells[4];
+    const avgPrice = parseFloat(portRow.cells[2].textContent);
 
-      currentPriceCell.textContent = price.toFixed(2);
-      const pl = ((price - avgPrice) / avgPrice) * 100;
-      plCell.className = pl >= 0 ? "cell-positive" : "cell-negative";
+    currentPriceCell.textContent = price.toFixed(2);
+    const pl = avgPrice > 0 ? ((price - avgPrice) / avgPrice) * 100 : 0;
+    plCell.textContent = `${pl >= 0 ? "+" : ""}${pl.toFixed(2)}%`;
+    plCell.className = pl >= 0 ? "cell-positive" : "cell-negative";
+
+    const qty = toFiniteNumber(portRow.cells[1].textContent, 0);
+    const pnlValueCell = portRow.cells[5];
+    if (pnlValueCell) {
+      const pnlValue = (price - avgPrice) * qty;
+      pnlValueCell.textContent = `${pnlValue >= 0 ? "+" : ""}${pnlValue.toFixed(2)}`;
+      pnlValueCell.className = pnlValue >= 0 ? "cell-positive" : "cell-negative";
     }
-  });
+  }
 
   // Real-time Chart Update (Candlestick Pulse)
   if (state.tvSeries && state.activeTicker === ticker && state.lastCandle) {
     state.lastCandle.close = price;
     if (price > state.lastCandle.high) state.lastCandle.high = price;
     if (price < state.lastCandle.low) state.lastCandle.low = price;
+
+    // Smooth update for all series layers
     state.tvSeries.update(state.lastCandle);
+
+    if (state.areaSeries) {
+      state.areaSeries.update({
+        time: state.lastCandle.time,
+        value: price
+      });
+    }
+
+    // Dynamic legend update for the live pulse
+    if (typeof updateDynamicLegendPulse === 'function') {
+      updateDynamicLegendPulse(state.lastCandle);
+    }
   }
 }
 
@@ -307,20 +657,24 @@ function renderSummaryCards(payload) {
   const telemetry = payload.model_telemetry || {};
   const pred = payload.prediction || {};
 
-  // Standardize values
-  const predicted = Number(pred.predicted_price || 0).toFixed(2);
-  const trend = pred.trend || "N/A";
-  const confidence = pred.confidence || "N/A";
+  // Standardize values - handle both nested and flat structures
+  const predictedPrice = pred.predicted_price || payload.prediction_value || 0;
+  const predicted = Number(predictedPrice).toFixed(2);
+  const trend = pred.trend || "Neutral";
+  const confidence = pred.confidence || "Medium";
 
   // 1. Build Narrative
-  const companyName = fundamentals.name || ticker;
+  const exchange = payload.resolved_exchange || payload.exchange || state.activeExchange || "NSE";
+  const symbol = getCurrencyCode(exchange) === "INR" ? "Rs " : "$";
+  const companyName = fundamentals.name && fundamentals.name !== "N/A" ? fundamentals.name : (ticker || "N/A");
+
   const narrativeText = `
-    ${companyName} (${ticker}), operating in the ${fundamentals.sector || 'Global'} market, 
-    has shown significant performance cues in the ${fundamentals.industry || 'financial'} domain. 
+    ${companyName} (${ticker}), operating in the ${fundamentals.sector && fundamentals.sector !== 'N/A' ? fundamentals.sector : 'Global'} market, 
+    has shown significant performance cues in the ${fundamentals.industry && fundamentals.industry !== 'N/A' ? fundamentals.industry : 'financial'} domain. 
     Our Neural Ensemble, synthesizing data across multiple regimes, projects a 
     <span class="${trend === 'Bullish' ? 'cell-positive' : 'cell-negative'}" style="font-weight:800;">${trend}</span> outlook 
-    with a target price of <strong>₹${predicted}</strong>. 
-    ${fundamentals.summary || 'Market dynamics suggest volatility with high-confidence signals detected in volume profiles.'}
+    with a target price of <strong>${symbol}${predicted}</strong>. 
+    ${fundamentals.summary && fundamentals.summary !== 'No summary available.' ? fundamentals.summary : 'Market dynamics suggest volatility with high-confidence signals detected in volume profiles.'}
   `;
 
   // 2. Main Result Template
@@ -341,12 +695,12 @@ function renderSummaryCards(payload) {
       <div class="plx-card-grid">
         <div class="plx-stat-card">
           <div class="plx-stat-label">Estimated Price</div>
-          <div class="plx-stat-value">₹${predicted}</div>
+          <div class="plx-stat-value">${symbol}${predicted}</div>
         </div>
-        <div class="plx-stat-card" style="border-left-color: ${trend === 'Bullish' ? 'var(--success)' : 'var(--danger)'}">
+        <div class="plx-stat-card" style="border-left-color: ${trend === 'Bullish' ? 'var(--success)' : (trend === 'Bearish' ? 'var(--danger)' : 'var(--border)')}">
           <div class="plx-stat-label">Sentiment Trend</div>
-          <div class="plx-stat-value" style="color: ${trend === 'Bullish' ? 'var(--success)' : 'var(--danger)'}">
-            ${trend === 'Bullish' ? '↑' : '↓'} ${trend}
+          <div class="plx-stat-value" style="color: ${trend === 'Bullish' ? 'var(--success)' : (trend === 'Bearish' ? 'var(--danger)' : 'var(--text-muted)')}">
+            ${trend === 'Bullish' ? 'Up' : (trend === 'Bearish' ? 'Down' : 'Flat')} ${trend}
           </div>
         </div>
         <div class="plx-stat-card" style="border-left-color: var(--border-bright);">
@@ -355,7 +709,14 @@ function renderSummaryCards(payload) {
         </div>
       </div>
 
-      ${financials.length > 0 ? `
+      ${financials.length > 0 ? (() => {
+      // Use correct currency label based on exchange
+      const isIndia = exchange === 'NSE' || exchange === 'BSE';
+      const currLabel = isIndia ? '\u20b9 Cr' : '$ M';
+      // Indian financials come in full rupees; divide by 10M for Crores, or by 1M for USD millions
+      const divisor = isIndia ? 10000000 : 1000000;
+      const fmt = (v) => (Number(v || 0) / divisor).toFixed(0);
+      return `
         <div class="result-header" style="border-bottom:none; margin-bottom: 12px;">
           <div class="header-main" style="font-size: 1.2rem;">FINANCIAL_HIGHLIGHTS</div>
         </div>
@@ -364,9 +725,9 @@ function renderSummaryCards(payload) {
             <thead>
               <tr>
                 <th>YEAR</th>
-                <th>REVENUE ($M)</th>
-                <th>NET INCOME ($M)</th>
-                <th>EBIT ($M)</th>
+                <th>REVENUE (${currLabel})</th>
+                <th>NET INCOME (${currLabel})</th>
+                <th>EBIT (${currLabel})</th>
                 <th>GROWTH NOTES</th>
               </tr>
             </thead>
@@ -374,27 +735,28 @@ function renderSummaryCards(payload) {
               ${financials.map(f => `
                 <tr>
                   <td>${f.year}</td>
-                  <td>${(Number(f.revenue || 0) / 1000000).toFixed(0)}</td>
-                  <td>${(Number(f.net_income || 0) / 1000000).toFixed(0)}</td>
-                  <td>${(Number(f.ebit || 0) / 1000000).toFixed(0)}</td>
+                  <td>${fmt(f.revenue)}</td>
+                  <td>${fmt(f.net_income)}</td>
+                  <td>${fmt(f.ebit)}</td>
                   <td style="color: var(--accent); font-size: 0.7rem;">${f.growth_notes}</td>
                 </tr>
-              `).join("")}
+              `).join('')}
             </tbody>
           </table>
         </div>
-      ` : ''}
+        `;
+    })() : ''}
 
       <div class="plx-model-grid">
         <div class="result-header" style="border-bottom:none; margin-bottom: 16px;">
           <div class="header-main" style="font-size: 1rem; color: var(--text-muted);">NEURAL_ENSEMBLE_TRANSPARENCY</div>
         </div>
-        ${renderModelBar("TRANSFORMER_LSTM", telemetry.lstm || 0, predicted)}
-        ${renderModelBar("GRADIENT_BOOST_XGB", telemetry.xgboost || 0, predicted)}
-        ${renderModelBar("RANDOM_FOREST_QUANT", telemetry.random_forest || 0, predicted)}
+        ${telemetry.lstm > 0 ? renderModelBar("TRANSFORMER_LSTM", telemetry.lstm, predicted) : ''}
+        ${telemetry.xgboost > 0 ? renderModelBar("GRADIENT_BOOST_XGB", telemetry.xgboost, predicted) : ''}
+        ${telemetry.random_forest > 0 ? renderModelBar("RANDOM_FOREST_QUANT", telemetry.random_forest, predicted) : ''}
       </div>
 
-      ${payload.research ? `
+      ${payload.research && payload.research.synthesis ? `
         <div class="explanation-area" style="margin-top: 32px; border: 1px solid var(--border); background: rgba(0,255,163,0.02);">
           <div class="result-header" style="border-bottom:none; padding-bottom: 0;">
             <div class="header-main" style="font-size: 1.1rem; color: var(--accent);">NEURAL_RESEARCH_CONTEXT</div>
@@ -402,16 +764,24 @@ function renderSummaryCards(payload) {
           <div style="font-size: 0.95rem; line-height: 1.6; margin: 16px 0;">
             ${payload.research.synthesis}
           </div>
+          ${(payload.research.catalysts || []).length > 0 ? `
           <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-            ${(payload.research.catalysts || []).map(c => `<div class="plx-badge" style="background:var(--bg-deep);">${c}</div>`).join("")}
-          </div>
+            ${payload.research.catalysts.map(c => {
+      const label = typeof c === 'object' ? (c.catalyst || JSON.stringify(c)) : c;
+      return `<div class="plx-badge" style="background:var(--bg-deep);">${label}</div>`;
+    }).join('')}
+          </div>` : ''}
+          ${(payload.research.headlines || []).length > 0 ? `
           <div style="margin-top: 16px; font-size: 0.7rem; color: var(--text-muted);">
-            LATEST_INTEL: ${(payload.research.headlines || []).join(" | ")}
-          </div>
+            LATEST_INTEL: ${payload.research.headlines.join(' | ')}
+          </div>` : ''}
         </div>
       ` : ''}
     </div>
   `;
+
+  updateDashboardKpis(payload);
+  renderForecastBandChart(payload);
 
   if (elements.tickerMeta) {
     elements.tickerMeta.textContent = `// ACTIVE_SCAN: ${ticker}`;
@@ -428,7 +798,8 @@ function renderSummaryCards(payload) {
     renderRiskProtocol(payload.backtest);
   }
 
-  loadAdvancedInsights(ticker, payload.exchange || "NSE");
+  // Note: loadAdvancedInsights is now called directly from individual functions
+  // to ensure correct ticker is used
 }
 
 function renderModelBar(label, value, target) {
@@ -437,7 +808,7 @@ function renderModelBar(label, value, target) {
     <div class="plx-model-bar-container">
       <div class="plx-model-header">
         <span>${label}</span>
-        <span style="color: var(--accent);">₹${Number(value).toFixed(2)}</span>
+        <span style="color: var(--accent);">${Number(value).toFixed(2)}</span>
       </div>
       <div class="plx-bar-bg">
         <div class="plx-bar-fill" style="width: ${pct}%"></div>
@@ -445,7 +816,6 @@ function renderModelBar(label, value, target) {
     </div>
   `;
 }
-
 async function loadQuantumAnalytics() {
   try {
     // 1. Sector Rotation
@@ -705,23 +1075,68 @@ async function exportReport(ticker, exchange) {
   }
 }
 
-async function loadAdvancedInsights(ticker, exchange) {
+async function loadAdvancedInsights(ticker, exchange, period = "2y") {
   if (!ticker || ticker === "N/A" || ticker === "null") return;
 
   state.activeTicker = ticker;
+  state.activeExchange = exchange || "NSE";
 
-  // Load Chart
-  try {
-    const chartData = await getJson(`/api/chart-data/${ticker}?exchange=${exchange}`);
-    if (chartData.success) {
-      renderTVChart(chartData.ohlcv);
+  // Update button active states
+  document.querySelectorAll(".btn-time, .range-btn").forEach(btn => {
+    btn.classList.remove("active");
+    const p = period.toLowerCase();
+    const key = (btn.dataset.period || btn.textContent || "").toLowerCase().trim();
+    const normalizedKey = key.replace("mo", "m");
+    const normalizedPeriod = p.replace("mo", "m");
+    if (normalizedKey === normalizedPeriod) {
+      btn.classList.add("active");
     }
-  } catch (e) {
-    console.error("Chart load error", e);
-  }
+  });
+
+  // Load Chart and Price Table
+  loadTickerData(ticker, exchange, period);
 
   // Load Fundamentals
   fetchAndRenderFundamentals(ticker);
+}
+
+// Generic function to load ticker data (chart + table)
+async function loadTickerData(ticker, exchange = "NSE", period = "2y") {
+  try {
+    const chartData = await getChartData(ticker, exchange, period, { useCache: true });
+    if (chartData.success) {
+      state.activeTicker = ticker;
+      state.activeExchange = chartData.exchange || exchange;
+
+      // Use enhanced chart if available, otherwise fallback to original
+      if (typeof renderEnhancedTVChart === 'function') {
+        renderEnhancedTVChart(chartData.ohlcv);
+      } else {
+        renderTVChart(chartData.ohlcv);
+      }
+
+      renderVolumeChart(chartData.ohlcv || []);
+      if (chartData.current_price && chartData.current_price.price != null) {
+        updateLivePriceKpi(chartData.current_price.price, state.activeExchange);
+      }
+      if (elements.kpiSymbol) {
+        elements.kpiSymbol.textContent = `${ticker} (${state.activeExchange})`;
+      }
+      announceStatus(`Loaded chart data for ${ticker}`);
+
+      // Load price data table for ALL tickers
+      if (typeof priceTable !== 'undefined') {
+        if (typeof priceTable.renderFromPayload === "function") {
+          priceTable.renderFromPayload(chartData);
+        } else {
+          priceTable.loadTickerData(ticker, exchange, period);
+        }
+      }
+    }
+  } catch (e) {
+    if (e && e.name === "AbortError") return;
+    console.error("Ticker data load error", e);
+  }
 }
 
 function renderJSON(payload) {
@@ -768,7 +1183,22 @@ function healthMarkup(payload) {
 async function runPrediction(quick = false, historyDays = null) {
   const button = quick ? byId("btn-quick") : byId("btn-predict");
   if (!button) return;
+
+  // Show loading state
   setButtonLoading(button, true, quick ? "Running quick..." : "Predicting...");
+
+  // Show skeleton loading UI
+  if (typeof showLoadingSkeleton === 'function') {
+    showLoadingSkeleton();
+  } else {
+    elements.summaryCards.innerHTML = `
+      <div class="summary-card" style="grid-column: 1 / -1;">
+        <div class="summary-card__label">PROCESSING_NEURAL_PIPELINE</div>
+        <div class="summary-card__value" style="animation: pulse 2s infinite;">Analyzing market data...</div>
+      </div>
+    `;
+  }
+
   try {
     const stockEl = byId("predict-stock");
     const exchEl = byId("predict-exchange");
@@ -779,9 +1209,19 @@ async function runPrediction(quick = false, historyDays = null) {
 
     const targetDate = dateEl?.value || null;
 
+    // Strip parenthetical annotations from exchange value
+    let exchangeValue = exchEl ? exchEl.value : "NSE";
+    exchangeValue = exchangeValue.replace(/\s*\([^)]*\)/g, '').trim();
+
+    // Client-side validation for ticker format
+    const tickerValue = stockEl.value.trim().toUpperCase();
+    if (!/^[A-Z0-9]+$/.test(tickerValue)) {
+      throw new Error("Invalid ticker format. Please use alphanumeric characters only.");
+    }
+
     const payload = {
-      ticker: stockEl.value.trim(),
-      exchange: exchEl ? exchEl.value : "NSE",
+      ticker: tickerValue,
+      exchange: exchangeValue,
       target_date: targetDate && targetDate.trim() !== "" ? targetDate : null,
       model_type: modelEl ? modelEl.value : "ensemble",
       include_backtest: byId("predict-backtest")?.checked || false,
@@ -789,8 +1229,16 @@ async function runPrediction(quick = false, historyDays = null) {
       history_days: historyDays || 500
     };
     const data = await postJson(quick ? "/api/predict/quick" : "/api/predict", payload);
+
+    // Update state with current ticker before rendering
+    state.activeTicker = tickerValue;
+    state.activeExchange = exchangeValue;
+
     renderSummaryCards(data);
     renderJSON(data);
+
+    // Load price data table for the correct ticker
+    loadTickerData(tickerValue, exchangeValue);
   } catch (error) {
     renderError(error);
   } finally {
@@ -814,6 +1262,9 @@ async function runAnalyze() {
     const data = await postJson("/api/analyze", payload);
     renderSummaryCards(data);
     renderJSON(data);
+
+    // Load price data table for the analyzed ticker
+    loadTickerData(payload.ticker, payload.exchange);
   } catch (error) {
     renderError(error);
   } finally {
@@ -835,11 +1286,14 @@ async function runBacktest() {
     const payload = {
       ticker: stockEl.value.trim(),
       exchange: exchEl ? exchEl.value : "NSE",
-      days: Number(daysEl ? daysEl.value : 30),
+      days: daysEl ? parseInt(daysEl.value) : 30,
     };
     const data = await postJson("/api/backtest", payload);
     renderSummaryCards(data);
     renderJSON(data);
+
+    // Load price data table for the backtested ticker
+    loadTickerData(payload.ticker, payload.exchange);
   } catch (error) {
     renderError(error);
   } finally {
@@ -887,6 +1341,11 @@ async function refreshHealth() {
   try {
     const data = await getJson("/api/health");
     elements.healthView.innerHTML = healthMarkup(data);
+    const statusText = byId("system-status-text");
+    if (statusText) {
+      statusText.textContent = data.status === "healthy" ? "System Healthy" : "System Degraded";
+    }
+    announceStatus(`Health status updated: ${data.status}`);
   } catch (error) {
     elements.healthView.className = "status-bad";
     elements.healthView.textContent = error.message;
@@ -922,34 +1381,37 @@ async function renderPortfolio() {
     if (!data.success) return;
 
     elements.portTbody.innerHTML = data.items.map(item => `
-      <tr>
+      <tr data-ticker="${item.ticker}">
         <td style="color: var(--accent); font-weight: 700;">${item.ticker}</td>
         <td>${item.quantity}</td>
         <td>${item.avg_price.toFixed(2)}</td>
         <td>--</td>
         <td>--</td>
+        <td>--</td>
         <td><button class="btn-ghost" style="color: var(--danger);" onclick="updatePortfolio('${item.ticker}', 'remove')">REMOVE</button></td>
       </tr>
-    `).join("") || '<tr><td colspan="6" style="text-align:center; padding: 20px;">NO_DATA</td></tr>';
+    `).join("") || '<tr><td colspan="7" style="text-align:center; padding: 20px;">NO_DATA</td></tr>';
   } catch (e) {
     console.error(e);
   }
 }
 
 async function updatePortfolioManual() {
-  const ticker = byId("port-ticker").value;
+  const ticker = byId("port-ticker").value.trim().toUpperCase();
   const qty = parseFloat(byId("port-qty").value) || 0;
   const price = parseFloat(byId("port-price").value) || 0;
 
   if (!ticker) return;
   await postJson("/api/portfolio", { ticker, quantity: qty, avg_price: price, action: "add" });
   renderPortfolio();
+  announceStatus(`Position added for ${ticker}`);
 }
 
 // Global for inline onclick
 window.updatePortfolio = async (ticker, action) => {
   await postJson("/api/portfolio", { ticker, action });
   renderPortfolio();
+  announceStatus(`Portfolio ${action} for ${ticker}`);
 };
 
 async function renderWatchlist() {
@@ -958,28 +1420,31 @@ async function renderWatchlist() {
     if (!data.success) return;
 
     elements.watchTbody.innerHTML = data.items.map(item => `
-      <tr>
+      <tr data-ticker="${item.ticker}">
         <td style="color: var(--accent); font-weight: 700;">${item.ticker}</td>
-        <td>${item.exchange}</td>
+        <td>--</td>
         <td><span class="status-good">MONITORING</span></td>
+        <td>${item.exchange}</td>
         <td><button class="btn-ghost" style="color: var(--danger);" onclick="updateWatchlist('${item.ticker}', 'remove')">REMOVE</button></td>
       </tr>
-    `).join("") || '<tr><td colspan="4" style="text-align:center; padding: 20px;">EMPTY_RADAR</td></tr>';
+    `).join("") || '<tr><td colspan="5" style="text-align:center; padding: 20px;">EMPTY_RADAR</td></tr>';
   } catch (e) {
     console.error(e);
   }
 }
 
 async function updateWatchlistManual() {
-  const ticker = byId("watch-ticker").value;
+  const ticker = byId("watch-ticker").value.trim().toUpperCase();
   if (!ticker) return;
   await postJson("/api/watchlist", { ticker, action: "add" });
   renderWatchlist();
+  announceStatus(`Watchlist add for ${ticker}`);
 }
 
 window.updateWatchlist = async (ticker, action) => {
   await postJson("/api/watchlist", { ticker, action });
   renderWatchlist();
+  announceStatus(`Watchlist ${action} for ${ticker}`);
 };
 
 async function runScanner() {
@@ -989,7 +1454,7 @@ async function runScanner() {
   }
   const preset = elements.scanPreset.value;
   setButtonLoading(elements.btnRunScan, true, "Scanning...");
-  elements.scannerTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 40px; color: var(--accent);">INITIALIZING_PARALLEL_SCAN...</td></tr>';
+  elements.scannerTbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 40px; color: var(--accent);">INITIALIZING_PARALLEL_SCAN...</td></tr>';
 
   try {
     const data = await postJson("/api/scan", { preset });
@@ -998,18 +1463,24 @@ async function runScanner() {
     }
 
     if (data.results.length === 0) {
-      elements.scannerTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 40px;">NO_RESULTS_FOUND</td></tr>';
+      elements.scannerTbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 40px;">NO_RESULTS_FOUND</td></tr>';
       return;
     }
 
     elements.scannerTbody.innerHTML = data.results.map(item => {
       const changeClass = item.change_pct >= 0 ? 'cell-positive' : 'cell-negative';
       const aiClass = item.ai_direction === 'UP' ? 'cell-positive' : 'cell-negative';
+      const guessedExchange = item.ticker?.endsWith(".NS")
+        ? "NSE"
+        : item.ticker?.endsWith(".BO")
+          ? "BSE"
+          : (preset === "BLUECHIP_US" ? "NASDAQ" : "NSE");
       return `
-        <tr>
+        <tr data-ticker="${item.ticker}" onclick="loadTickerData('${item.ticker}', '${guessedExchange}')" style="cursor: pointer;" title="Click to load price data">
           <td style="color: var(--text-main); font-weight: 700;">${item.ticker}</td>
           <td class="cell-val">${(item.price || 0).toFixed(2)}</td>
           <td class="${changeClass}">${(item.change_pct || 0).toFixed(2)}%</td>
+          <td>--</td>
           <td>${(item.rsi || 0).toFixed(1)}</td>
           <td style="color: var(--accent); font-size: 0.7rem;">${item.signal || "N/A"}</td>
           <td class="${aiClass}" style="font-weight: 800;">${item.ai_direction || "N/A"}</td>
@@ -1018,7 +1489,8 @@ async function runScanner() {
     }).join("");
 
   } catch (error) {
-    elements.scannerTbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 40px; color: var(--danger);">${error.message}</td></tr>`;
+    announceStatus(`Scanner error: ${error.message}`);
+    elements.scannerTbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 40px; color: var(--danger);">${error.message}</td></tr>`;
   } finally {
     setButtonLoading(elements.btnRunScan, false);
   }
@@ -1029,12 +1501,25 @@ function handleTabSwitch(event) {
   if (!tabId) return;
 
   // Update Buttons
-  document.querySelectorAll(".tab-link").forEach(btn => btn.classList.remove("active"));
+  document.querySelectorAll(".tab-link").forEach(btn => {
+    btn.classList.remove("active");
+    btn.setAttribute("aria-selected", "false");
+    btn.setAttribute("tabindex", "-1");
+  });
   event.target.classList.add("active");
+  event.target.setAttribute("aria-selected", "true");
+  event.target.setAttribute("tabindex", "0");
 
   // Update Panes
-  document.querySelectorAll(".tab-pane").forEach(pane => pane.classList.remove("active"));
-  byId(tabId).classList.add("active");
+  document.querySelectorAll(".tab-pane").forEach(pane => {
+    pane.classList.remove("active");
+    pane.setAttribute("hidden", "true");
+  });
+  const targetPane = byId(tabId);
+  if (!targetPane) return;
+  targetPane.classList.add("active");
+  targetPane.removeAttribute("hidden");
+  announceStatus(`${event.target.textContent.trim()} tab opened`);
 
   if (tabId === "tab-quant") {
     loadQuantumAnalytics();
@@ -1046,6 +1531,27 @@ function bindEvents() {
   document.querySelectorAll(".tab-link").forEach(btn => {
     btn.addEventListener("click", handleTabSwitch);
   });
+
+  const tabButtons = Array.from(document.querySelectorAll(".tab-link"));
+  const tabList = document.querySelector(".nav-tabs");
+  if (tabList) {
+    tabList.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const currentIndex = tabButtons.findIndex((btn) => btn === document.activeElement);
+      if (currentIndex < 0) return;
+      let nextIndex = currentIndex;
+      if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % tabButtons.length;
+      if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + tabButtons.length) % tabButtons.length;
+      if (event.key === "Home") nextIndex = 0;
+      if (event.key === "End") nextIndex = tabButtons.length - 1;
+      const nextTab = tabButtons[nextIndex];
+      if (nextTab) {
+        nextTab.focus();
+        nextTab.click();
+      }
+    });
+  }
 
   byId("predict-form").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1063,6 +1569,16 @@ function bindEvents() {
     runBacktest();
   });
 
+  document.querySelectorAll(".btn-time").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".btn-time").forEach((x) => x.classList.remove("active"));
+      btn.classList.add("active");
+      if (!state.activeTicker) return;
+      const period = btn.dataset.period || "2y";
+      loadAdvancedInsights(state.activeTicker, state.activeExchange || "NSE", period);
+    });
+  });
+
   // Scanner
   elements.btnRunScan.addEventListener("click", runScanner);
 
@@ -1077,20 +1593,70 @@ function bindEvents() {
   // Chat Events
   elements.chatToggle.addEventListener("click", () => {
     elements.chatBox.classList.remove("hidden");
+    elements.chatBox.setAttribute("aria-hidden", "false");
+    elements.chatToggle.setAttribute("aria-expanded", "true");
     elements.chatInput.focus();
+    announceStatus("Chat opened");
   });
-  elements.chatClose.addEventListener("click", () => elements.chatBox.classList.add("hidden"));
+  elements.chatClose.addEventListener("click", () => {
+    elements.chatBox.classList.add("hidden");
+    elements.chatBox.setAttribute("aria-hidden", "true");
+    elements.chatToggle.setAttribute("aria-expanded", "false");
+    elements.chatToggle.focus();
+    announceStatus("Chat closed");
+  });
   elements.chatInput.addEventListener("keypress", (e) => {
     if (e.key === "Enter") sendChatMessage();
   });
   if (elements.chatSend) {
     elements.chatSend.addEventListener("click", sendChatMessage);
   }
+
+  // Initialize tab semantics for first render.
+  document.querySelectorAll(".tab-pane").forEach((pane) => {
+    if (pane.classList.contains("active")) {
+      pane.removeAttribute("hidden");
+    } else {
+      pane.setAttribute("hidden", "true");
+    }
+  });
+  if (elements.chatBox && elements.chatBox.classList.contains("hidden")) {
+    elements.chatBox.setAttribute("aria-hidden", "true");
+  }
 }
 
-bindEvents();
-refreshHealth();
-renderPortfolio();
-renderWatchlist();
-initWebSocket();
+function bootstrapApp() {
+  bindEvents();
+  stampKpiUpdate();
+  initWebSocket();
+  refreshHealth();
+
+  const idleRun = () => {
+    renderPortfolio();
+    renderWatchlist();
+  };
+
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(idleRun, { timeout: 1200 });
+  } else {
+    setTimeout(idleRun, 0);
+  }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootstrapApp, { once: true });
+} else {
+  bootstrapApp();
+}
+
+window.addEventListener("beforeunload", () => {
+  if (state.wsInterval) {
+    clearInterval(state.wsInterval);
+    state.wsInterval = null;
+  }
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.close();
+  }
+});
+
 

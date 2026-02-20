@@ -40,19 +40,27 @@ def _label(score: float) -> str:
     return "neutral"
 
 
-def analyze_sentiment(ticker: str) -> SentimentResult:
+def analyze_sentiment(ticker: str, research_catalysts: List[str] = None) -> SentimentResult:
     """
-    Analyze headline sentiment from Yahoo Finance RSS and Google News RSS.
+    Analyze headline sentiment from Yahoo Finance RSS, Google News RSS, and Research Agent.
     """
     analyzer = SentimentIntensityAnalyzer() if SentimentIntensityAnalyzer is not None else None
+    
+    # Resolve ticker for RSS
+    base_ticker = ticker.split(".")[0]
+    
     sources = [
         settings.yahoo_rss_template.format(ticker=ticker),
-        settings.google_news_template.format(ticker=ticker),
+        settings.google_news_template.format(ticker=base_ticker),
     ]
 
     headlines: List[str] = []
     for url in sources:
         headlines.extend(_fetch_feed(url, timeout_seconds=settings.sentiment_timeout))
+
+    # Add research catalysts if provided
+    if research_catalysts:
+        headlines.extend(research_catalysts)
 
     if not headlines:
         return SentimentResult(score=0.0, label="neutral", article_count=0, headlines=[], headline_details=[])
@@ -62,7 +70,15 @@ def analyze_sentiment(ticker: str) -> SentimentResult:
 
     details = []
     scores = []
-    for text in headlines[:15]:
+    # Deduplicate and limit
+    seen = set()
+    unique_headlines = []
+    for h in headlines:
+        if h and h.lower() not in seen:
+            seen.add(h.lower())
+            unique_headlines.append(h)
+
+    for text in unique_headlines[:20]:
         score = analyzer.polarity_scores(text)["compound"]
         scores.append(score)
         details.append({"text": text, "score": score, "label": _label(score)})
@@ -72,7 +88,7 @@ def analyze_sentiment(ticker: str) -> SentimentResult:
     return SentimentResult(
         score=avg,
         label=_label(avg),
-        article_count=len(headlines),
+        article_count=len(unique_headlines),
         headlines=[d["text"] for d in details],
         headline_details=details,
     )

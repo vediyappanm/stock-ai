@@ -1,7 +1,7 @@
 """Request schemas for AI Stock Analyst API."""
 
 from datetime import date
-from typing import Optional, List
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -86,8 +86,13 @@ class PredictRequest(BaseModel):
     @field_validator("target_date")
     @classmethod
     def validate_target_date(cls, value: Optional[date]) -> Optional[date]:
-        if value is not None and value < date.today():
-            raise ValueError("target_date cannot be in the past")
+        # Allow dates within reasonable range (past 7 days to future)
+        if value is not None:
+            from datetime import timedelta
+            min_date = date.today() - timedelta(days=7)
+            if value < min_date:
+                raise ValueError(f"target_date must be after {min_date.isoformat()}")
+        return value
         return value
 
     @field_validator("model_type")
@@ -153,17 +158,91 @@ class ScanRequest(BaseModel):
     tickers: Optional[List[str]] = Field(default=None, description="Custom list of tickers")
     exchange: str = Field(default="NSE", description="Default exchange for scan")
 
+    @field_validator("preset")
+    @classmethod
+    def normalize_preset(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        cleaned = value.strip().upper()
+        if not cleaned:
+            return None
+        return cleaned
+
+    @field_validator("tickers")
+    @classmethod
+    def normalize_tickers(cls, value: Optional[List[str]]) -> Optional[List[str]]:
+        if value is None:
+            return None
+        cleaned = [item.strip().upper() for item in value if item and item.strip()]
+        if not cleaned:
+            return None
+        return list(dict.fromkeys(cleaned))
+
+    @field_validator("exchange")
+    @classmethod
+    def validate_exchange(cls, value: str) -> str:
+        normalized = _normalize_exchange(value)
+        return normalized or settings.default_exchange
+
+    @model_validator(mode="after")
+    def validate_scan_source(self) -> "ScanRequest":
+        if not self.preset and not self.tickers:
+            raise ValueError("Provide either a preset or at least one ticker")
+        if self.tickers and len(self.tickers) > 200:
+            raise ValueError("Maximum 200 tickers are allowed per scan request")
+        return self
+
 
 class WatchlistRequest(BaseModel):
     """Watchlist management request."""
+
     ticker: str
     exchange: str = "NSE"
-    action: str = "add" # add, remove
+    action: Literal["add", "remove"] = "add"
+
+    @field_validator("ticker")
+    @classmethod
+    def validate_ticker(cls, value: str) -> str:
+        cleaned = value.strip().upper()
+        if not cleaned:
+            raise ValueError("ticker cannot be empty")
+        return cleaned
+
+    @field_validator("exchange")
+    @classmethod
+    def validate_exchange(cls, value: str) -> str:
+        normalized = _normalize_exchange(value)
+        return normalized or settings.default_exchange
+
 
 class PortfolioRequest(BaseModel):
     """Portfolio management request."""
+
     ticker: str
     exchange: str = "NSE"
     quantity: float = 0.0
     avg_price: float = 0.0
-    action: str = "add" # add, remove
+    action: Literal["add", "remove"] = "add"
+
+    @field_validator("ticker")
+    @classmethod
+    def validate_ticker(cls, value: str) -> str:
+        cleaned = value.strip().upper()
+        if not cleaned:
+            raise ValueError("ticker cannot be empty")
+        return cleaned
+
+    @field_validator("exchange")
+    @classmethod
+    def validate_exchange(cls, value: str) -> str:
+        normalized = _normalize_exchange(value)
+        return normalized or settings.default_exchange
+
+    @model_validator(mode="after")
+    def validate_add_payload(self) -> "PortfolioRequest":
+        if self.action == "add":
+            if self.quantity <= 0:
+                raise ValueError("quantity must be > 0 when action='add'")
+            if self.avg_price <= 0:
+                raise ValueError("avg_price must be > 0 when action='add'")
+        return self

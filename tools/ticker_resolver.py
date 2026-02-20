@@ -30,7 +30,18 @@ _COMMON_ALIASES: Dict[str, str] = {
     "ALPHABET": "GOOGL",
     "AMAZON": "AMZN",
     "NVIDIA": "NVDA",
+    "NVDIA": "NVDA",
     "META": "META",
+}
+
+_PREFERRED_EXCHANGE_BY_TICKER: Dict[str, str] = {
+    "AAPL": "NASDAQ",
+    "AMZN": "NASDAQ",
+    "GOOGL": "NASDAQ",
+    "META": "NASDAQ",
+    "MSFT": "NASDAQ",
+    "NVDA": "NASDAQ",
+    "TSLA": "NASDAQ",
 }
 
 
@@ -107,11 +118,13 @@ def _ticker_exists(symbol: str) -> bool:
 
 def _suggestions(stock: str, exchange: str) -> List[str]:
     normalized = _normalize_stock(stock)
-    suggestions = []
+    suggestions: List[str] = []
     for key, value in _COMMON_ALIASES.items():
         if normalized in key or key.startswith(normalized[:2]):
             suggestions.append(apply_exchange_suffix(value, exchange))
-    return suggestions[:3]
+    # De-duplicate while preserving order.
+    deduped = list(dict.fromkeys(suggestions))
+    return deduped[:3]
 
 
 def resolve_ticker(stock: str, exchange: str | None = None) -> ResolvedTicker:
@@ -138,6 +151,21 @@ def resolve_ticker(stock: str, exchange: str | None = None) -> ResolvedTicker:
                     exchange=candidate.exchange,
                     full_symbol=full_symbol,
                 )
+
+    # Best-effort fallback for known aliases/typos when provider validation is unavailable.
+    normalized = _normalize_stock(stock)
+    aliased = _COMMON_ALIASES.get(normalized)
+    if aliased:
+        preferred_exchange = _PREFERRED_EXCHANGE_BY_TICKER.get(aliased, primary_exchange)
+        if exchange is None and primary_exchange in {"NSE", "BSE"} and preferred_exchange in {"NYSE", "NASDAQ"}:
+            target_exchange = preferred_exchange
+        else:
+            target_exchange = primary_exchange
+        return ResolvedTicker(
+            ticker=aliased,
+            exchange=target_exchange,
+            full_symbol=apply_exchange_suffix(aliased, target_exchange),
+        )
 
     hints = _suggestions(stock, primary_exchange)
     hint_text = f" Suggestions: {', '.join(hints)}." if hints else ""

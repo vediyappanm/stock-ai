@@ -10,7 +10,11 @@ from typing import Optional
 from config.settings import settings
 from schemas.response_schemas import ParsedQuery
 from tools.error_handler import ValidationError
-from tools.llm_client import llm_client
+
+try:  # pragma: no cover - import availability depends on runtime extras
+    from openai import OpenAI
+except Exception:  # pragma: no cover
+    OpenAI = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +31,11 @@ def parse_query_with_llm(query: str) -> dict:
     """
     Parse natural-language query with LLM and return structured dict.
     """
+    if not settings.openai_api_key:
+        raise ValidationError("OPENAI_API_KEY is required for LLM query parsing.", failed_step="PARSE_QUERY")
+    if OpenAI is None:
+        raise ValidationError("OpenAI client dependency is not available.", failed_step="PARSE_QUERY")
+
     system_prompt = "You parse financial queries and output strict JSON only."
     user_prompt = f"""Extract stock information from this query and return strict JSON:
 Query: "{query}"
@@ -37,13 +46,18 @@ JSON keys:
 - target_date (YYYY-MM-DD or null)
 """
     try:
-        content = llm_client.chat_completion(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
+        client = OpenAI(api_key=settings.openai_api_key)
+        response = client.chat.completions.create(
+            model=settings.openai_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
             temperature=0.0,
             max_tokens=200,
-            json_mode=True
+            response_format={"type": "json_object"},
         )
+        content = response.choices[0].message.content if response.choices else None
         
         if not content:
             raise ValidationError("LLM service unreachable or failed to return content.", failed_step="PARSE_QUERY")
@@ -119,4 +133,3 @@ def parse_query(
         )
 
     return ParsedQuery(stock_name=stock_name, exchange=resolved_exchange, target_date=resolved_date)
-

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>STK-ENGINE - Force Reload</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-width: 600px;
+        }
+        h1 {
+            margin: 0 0 20px 0;
+            font-size: 2.5em;
+        }
+        .version {
+            font-family: 'Courier New', monospace;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        button {
+            background: #00ffa3;
+            color: #000;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.2em;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+            margin: 10px;
+        }
+        button:hover {
+            background: #00cc82;
+            transform: scale(1.05);
+        }
+        .instructions {
+            margin-top: 30px;
+            text-align: left;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            border-radius: 10px;
+        }
+        .instructions h3 {
+            margin-top: 0;
+        }
+        .instructions ol {
+            margin: 10px 0;
+        }
+        .instructions li {
+            margin: 10px 0;
+        }
+        .key {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 STK-ENGINE Cache Clear</h1>
+        <p>Your browser is loading old cached files.</p>
+        
+        <div class="version">
+            File Version: <span id="version">Loading...</span>
+        </div>
+        
+        <button onclick="forceReload()">🚀 Force Reload Dashboard</button>
+        <button onclick="openIncognito()">🕵️ Open in Incognito</button>
+        
+        <div class="instructions">
+            <h3>📋 Manual Cache Clear Instructions:</h3>
+            <ol>
+                <li>Press <span class="key">Ctrl</span> + <span class="key">Shift</span> + <span class="key">Delete</span></li>
+                <li>Select "Cached images and files"</li>
+                <li>Click "Clear now"</li>
+                <li>Press <span class="key">Ctrl</span> + <span class="key">F5</span> to hard refresh</li>
+            </ol>
+            
+            <h3>✅ After clearing cache, you should see:</h3>
+            <ul>
+                <li>✅ No "pong is not valid JSON" errors</li>
+                <li>✅ No "chart.addCandlestickSeries" errors</li>
+                <li>✅ Floating notifications for price changes</li>
+                <li>✅ Clean console output</li>
+            </ul>
+        </div>
+    </div>
+    
+    <script>
+        // Display current file hash
+        fetch('/static/app_enhancements.js')
+            .then(r => r.text())
+            .then(text => {
+                const hash = text.length.toString(16);
+                document.getElementById('version').textContent = hash;
+            })
+            .catch(() => {
+                document.getElementById('version').textContent = 'Error loading';
+            });
+        
+        function forceReload() {
+            // Clear service workers
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(registrations => {
+                    registrations.forEach(reg => reg.unregister());
+                });
+            }
+            
+            // Clear cache storage
+            if ('caches' in window) {
+                caches.keys().then(names => {
+                    names.forEach(name => caches.delete(name));
+                });
+            }
+            
+            // Add timestamp to force reload
+            const timestamp = new Date().getTime();
+            window.location.href = `/?nocache=${timestamp}`;
+        }
+        
+        function openIncognito() {
+            alert('Opening in Incognito/Private mode:\n\n' +
+                  '1. Press Ctrl+Shift+N (Chrome/Edge)\n' +
+                  '2. Navigate to: http://localhost:8001\n\n' +
+                  'This will load fresh files without cache.');
+        }
+    </script>
+</body>
+</html>

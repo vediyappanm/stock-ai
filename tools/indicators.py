@@ -146,14 +146,12 @@ def compute_indicators(ohlcv: pd.DataFrame) -> pd.DataFrame:
     df["Vol_10d"] = df["Return_1d"].rolling(10).std()
     df["Vol_20d"] = df["Return_1d"].rolling(20).std()
 
-    # Final cleanup
-    tail_rows = settings.indicator_validation_rows
-    if len(df) > tail_rows:
-        tail = df[INDICATOR_COLUMNS].tail(tail_rows)
-        # We fillna for the very first few rows normally, but the TA library handles middle NaNs. 
-        # Only error if NaNs persist in the final analysis window.
-        if tail.isna().any().any():
-            df[INDICATOR_COLUMNS] = df[INDICATOR_COLUMNS].fillna(method="ffill").fillna(0)
+    # Final cleanup — always apply to handle NaN/Inf from warmup periods
+    import numpy as _np
+    # Replace +/- inf first (e.g. VWAP on zero-volume days)
+    df[INDICATOR_COLUMNS] = df[INDICATOR_COLUMNS].replace([_np.inf, -_np.inf], _np.nan)
+    # Forward-fill, then backward-fill, then zero for any remaining gaps
+    df[INDICATOR_COLUMNS] = df[INDICATOR_COLUMNS].ffill().bfill().fillna(0.0)
 
     return df
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 
@@ -14,7 +15,11 @@ from models.random_forest import RandomForestModel
 from schemas.response_schemas import ScanResultItem
 from tools.fetch_data import fetch_ohlcv_data
 from tools.indicators import compute_indicators
+from tools.error_handler import StockAnalystError
 from tools.ticker_resolver import resolve_ticker
+
+
+logger = logging.getLogger(__name__)
 
 
 # Market Presets
@@ -68,8 +73,11 @@ def scan_ticker(ticker: str, exchange: str = "NSE") -> Optional[ScanResultItem]:
             signal=signal,
             ai_direction=ai_direction
         )
-    except Exception as e:
-        print(f"Error scanning {ticker}: {e}")
+    except StockAnalystError as exc:
+        logger.debug("Skipping %s during scan: %s", ticker, exc)
+        return None
+    except Exception:
+        logger.warning("Error scanning %s", ticker, exc_info=True)
         return None
 
 async def run_market_scan(tickers: List[str], exchange: str = "NSE") -> List[ScanResultItem]:

@@ -1,374 +1,416 @@
 <!doctype html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>STK-ENGINE // QUANTUM ANALYTICS</title>
+  <meta name="theme-color" content="#f5f7fb" />
+  <title>STK-ENGINE Dashboard</title>
+  <meta name="description" content="Production-grade stock intelligence dashboard with predictions, charts, scanners, and portfolio analytics." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link
-    href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Bebas+Neue&display=swap"
-    rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="static/styles.css" />
   <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 </head>
-
 <body>
-  <div class="noise-overlay"></div>
-  <div id="toast-container" class="toast-container"></div>
+  <a class="skip-link" href="#main-content">Skip to dashboard</a>
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+  <div id="app-announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div class="bg-layer"></div>
 
   <header class="navbar">
-    <div class="navbar__logo">STK-ENGINE <span class="v-tag">v2.0.0</span></div>
-
-    <nav class="nav-tabs">
-      <button class="tab-link active" data-tab="tab-predict">PREDICT</button>
-      <button class="tab-link" data-tab="tab-scan">SCANNER</button>
-      <button class="tab-link" data-tab="tab-analysis">ANALYSIS</button>
-      <button class="tab-link" data-tab="tab-portfolio">PORTFOLIO</button>
-      <button class="tab-link" data-tab="tab-watchlist">WATCHLIST</button>
-      <button class="tab-link" data-tab="tab-quant">QUANT_ANALYTICS</button>
+    <div class="navbar__brand">
+      <div class="brand-mark">SE</div>
+      <div class="brand-text">
+        <div class="brand-title">STK-ENGINE</div>
+        <div class="brand-subtitle">Production Intelligence Platform</div>
+      </div>
+    </div>
+    <nav class="nav-tabs" role="tablist" aria-label="Main modules">
+      <button id="tab-btn-predict" class="tab-link active" role="tab" tabindex="0" aria-selected="true" aria-controls="tab-predict" data-tab="tab-predict">Predict</button>
+      <button id="tab-btn-scan" class="tab-link" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-scan" data-tab="tab-scan">Scanner</button>
+      <button id="tab-btn-analysis" class="tab-link" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-analysis" data-tab="tab-analysis">Analysis</button>
+      <button id="tab-btn-portfolio" class="tab-link" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-portfolio" data-tab="tab-portfolio">Portfolio</button>
+      <button id="tab-btn-watchlist" class="tab-link" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-watchlist" data-tab="tab-watchlist">Watchlist</button>
+      <button id="tab-btn-quant" class="tab-link" role="tab" tabindex="-1" aria-selected="false" aria-controls="tab-quant" data-tab="tab-quant">Quant</button>
     </nav>
-
     <div class="navbar__status" id="system-status-pill">
-      <span class="pulse-dot"></span> SYSTEM_LIVE
+      <span class="pulse-dot"></span>
+      <span id="system-status-text">System Live</span>
+      <span id="streaming-count">(0 symbols)</span>
     </div>
   </header>
 
-  <main class="dashboard-grid">
-    <!-- SIDEBAR: All Inputs & Controls -->
+  <main id="main-content" class="dashboard-grid">
     <aside class="side-panel">
-      <div class="hero-text">
-        <h1>STK_ANALYST</h1>
-        <p class="subtitle">Neural Market Modeling Engine</p>
-      </div>
+      <section class="panel-block">
+        <h1 class="panel-title">Command Center</h1>
+        <p class="panel-caption">Configure prediction and monitoring pipelines.</p>
+      </section>
 
-      <div class="panel-header">PREDICTION_PROTOCOL</div>
-      <form id="predict-form" class="predict-layout">
-        <div class="input-grid">
-          <div class="input-group">
-            <label>TICKER_ID</label>
-            <input id="predict-stock" type="text" placeholder="RELIANCE" required />
+      <section class="panel-block">
+        <h2 class="panel-header">Prediction</h2>
+        <form id="predict-form" class="stack-form">
+          <label for="predict-stock">Ticker</label>
+          <input id="predict-stock" type="text" placeholder="AAPL or RELIANCE" required />
+
+          <label for="predict-exchange">Exchange</label>
+          <select id="predict-exchange">
+            <option value="NSE">NSE</option>
+            <option value="BSE">BSE</option>
+            <option value="NYSE">NYSE</option>
+            <option value="NASDAQ">NASDAQ</option>
+          </select>
+
+          <label for="predict-date">Target Date</label>
+          <input id="predict-date" type="date" />
+
+          <label for="predict-model">Model</label>
+          <select id="predict-model">
+            <option value="ensemble">Ensemble</option>
+            <option value="random_forest">Random Forest</option>
+            <option value="lstm">LSTM</option>
+          </select>
+
+          <div class="checkbox-row">
+            <label class="custom-checkbox">
+              <input id="predict-backtest" type="checkbox" />
+              <span class="checkmark"></span>
+              Include Backtest
+            </label>
+            <label class="custom-checkbox">
+              <input id="predict-sentiment" type="checkbox" />
+              <span class="checkmark"></span>
+              Include Sentiment
+            </label>
           </div>
-          <div class="input-group">
-            <label>EXCHANGE</label>
-            <select id="predict-exchange">
-              <option value="NSE">NSE (India)</option>
-              <option value="BSE">BSE (India)</option>
-              <option value="NYSE">NYSE (USA)</option>
-              <option value="NASDAQ">NASDAQ (USA)</option>
-            </select>
+
+          <div class="action-row">
+            <button id="btn-predict" type="submit" class="btn-primary">Run Full Prediction</button>
+            <button id="btn-quick" type="button" class="btn-secondary">Quick Prediction</button>
           </div>
-          <div class="input-group">
-            <label>TARGET_DT</label>
-            <input id="predict-date" type="date" />
-          </div>
-          <div class="input-group">
-            <label>MODEL_PROT</label>
-            <select id="predict-model">
-              <option value="ensemble">Ensemble Protocol</option>
-              <option value="random_forest">Random Forest</option>
-              <option value="lstm">Neural LSTM</option>
-            </select>
-          </div>
+        </form>
+      </section>
+
+      <section class="panel-block">
+        <h2 class="panel-header">Analyze</h2>
+        <form id="analyze-form" class="inline-form">
+          <input id="analyze-stock" type="text" placeholder="Ticker" required />
+          <select id="analyze-exchange">
+            <option value="NSE">NSE</option>
+            <option value="BSE">BSE</option>
+            <option value="NYSE">NYSE</option>
+            <option value="NASDAQ">NASDAQ</option>
+          </select>
+          <button id="btn-analyze" type="submit" class="btn-small">Analyze</button>
+        </form>
+      </section>
+
+      <section class="panel-block">
+        <h2 class="panel-header">Backtest</h2>
+        <form id="backtest-form" class="inline-form">
+          <input id="backtest-stock" type="text" placeholder="Ticker" required />
+          <select id="backtest-exchange">
+            <option value="NSE">NSE</option>
+            <option value="BSE">BSE</option>
+            <option value="NYSE">NYSE</option>
+            <option value="NASDAQ">NASDAQ</option>
+          </select>
+          <input id="backtest-days" type="number" min="1" max="90" value="30" />
+          <button id="btn-backtest" type="submit" class="btn-small">Run Backtest</button>
+        </form>
+      </section>
+
+      <section class="panel-block">
+        <h2 class="panel-header">Workflow</h2>
+        <div class="workflow-input-row">
+          <input id="workflow-id" type="text" placeholder="Workflow ID" />
+          <button id="btn-workflow-poll" type="button" class="btn-icon" aria-label="Toggle workflow poll">Auto</button>
+          <button id="btn-workflow-check" type="button" class="btn-icon" aria-label="Check workflow">Check</button>
         </div>
-        <div class="checkbox-row">
-          <label class="custom-checkbox">
-            <input id="predict-backtest" type="checkbox" />
-            <span class="checkmark"></span> BACKTEST_V
-          </label>
-          <label class="custom-checkbox">
-            <input id="predict-sentiment" type="checkbox" />
-            <span class="checkmark"></span> SENTIMENT_V
-          </label>
-        </div>
-        <div class="action-row">
-          <button id="btn-predict" type="submit" class="btn-primary">INITIATE_V</button>
-          <button id="btn-quick" type="button" class="btn-secondary">QUICK_S</button>
-        </div>
-      </form>
-
-      <div class="panel-header">TECHNICAL_INDICATORS</div>
-      <form id="analyze-form" class="panel-form">
-        <input id="analyze-stock" type="text" placeholder="TICKER" required />
-        <select id="analyze-exchange" style="margin: 8px 0;">
-          <option value="NSE">NSE</option>
-          <option value="BSE">BSE</option>
-          <option value="NYSE">NYSE</option>
-          <option value="NASDAQ">NASDAQ</option>
-        </select>
-        <button id="btn-analyze" type="submit" class="btn-small">RUN_ANALYSIS</button>
-      </form>
-
-      <div class="panel-header">BACKTEST_HISTORY</div>
-      <form id="backtest-form" class="panel-form">
-        <input id="backtest-stock" type="text" placeholder="TICKER" required />
-        <input id="backtest-days" type="number" min="1" max="90" value="30" style="margin: 8px 0;" />
-        <button id="btn-backtest" type="submit" class="btn-small">RUN_BACKTEST</button>
-      </form>
-
-      <div class="panel-header">WORKFLOW_ID</div>
-      <div class="workflow-input-row">
-        <input id="workflow-id" type="text" placeholder="ID" />
-        <button id="btn-workflow-poll" type="button" class="btn-icon">⟳</button>
-      </div>
-      <div id="workflow-view" class="status-card-mini">IDLE...</div>
+        <div id="workflow-view" class="status-card-mini">Idle</div>
+      </section>
     </aside>
 
-    <!-- CONTENT: Results & Charts -->
     <section class="result-panel">
-      <!-- Tab: Prediction -->
-      <div id="tab-predict" class="tab-pane active">
+      <section class="kpi-strip" aria-label="Live dashboard metrics">
+        <article class="kpi-card">
+          <div class="kpi-label">Active Symbol</div>
+          <div class="kpi-value" id="kpi-symbol">N/A</div>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-label">Live Price</div>
+          <div class="kpi-value" id="kpi-live-price">--</div>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-label">Forecast</div>
+          <div class="kpi-value" id="kpi-forecast">--</div>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-label">Confidence</div>
+          <div class="kpi-value" id="kpi-confidence">--</div>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-label">Trend</div>
+          <div class="kpi-value" id="kpi-trend">Neutral</div>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-label">Updated</div>
+          <div class="kpi-value" id="kpi-updated">--:--:--</div>
+        </article>
+      </section>
+
+      <div id="tab-predict" class="tab-pane active" role="tabpanel" aria-labelledby="tab-btn-predict" tabindex="0">
         <div class="result-header">
-          <div class="header-main">EXECUTION_STREAM</div>
-          <div class="header-meta" id="result-ticker-meta">// STANDBY</div>
-          <button id="btn-export" class="btn-ghost"
-            style="margin-left: auto; text-decoration: underline; font-size: 0.7rem; display:none;">DOWNLOAD_REPORT</button>
+          <div>
+            <div class="header-main">Prediction Dashboard</div>
+            <div class="header-meta" id="result-ticker-meta">Waiting for symbol</div>
+          </div>
+          <button id="btn-export" class="btn-ghost" style="display:none;">Export Report</button>
         </div>
 
         <div class="result-grid" id="summary-cards">
-          <div class="summary-card">
-            <div class="summary-card__label">SYSTEM_READY</div>
-            <div class="summary-card__value">CONNECT_STREAM</div>
-          </div>
+          <article class="summary-card">
+            <div class="summary-card__label">System</div>
+            <div class="summary-card__value">Ready</div>
+          </article>
         </div>
 
-        <div class="chart-area" id="tv-chart-container" style="height: 480px; margin: 24px 0;">
-          <!-- TradingView Chart Rendered Here -->
-        </div>
+        <section class="chart-shell">
+          <header class="chart-shell__header">
+            <h3>Price Action</h3>
+            <div class="chart-toolbar" role="group" aria-label="Chart range">
+              <button class="btn-time active" type="button" data-period="1mo">1M</button>
+              <button class="btn-time" type="button" data-period="3mo">3M</button>
+              <button class="btn-time" type="button" data-period="6mo">6M</button>
+              <button class="btn-time" type="button" data-period="1y">1Y</button>
+              <button class="btn-time" type="button" data-period="2y">2Y</button>
+              <button class="btn-time" type="button" data-period="5y">5Y</button>
+            </div>
+          </header>
+          <div class="chart-area">
+            <div id="tv-chart-container" class="chart-canvas"></div>
+          </div>
+        </section>
 
-        <div id="backtest-analytics" class="explanation-area" style="display:none; margin-top: 24px;">
-          <div class="result-header">
-            <div class="header-main">QUANT_ANALYTICS // PERFORMANCE_OVERLAY</div>
-            <div class="header-meta" id="bt-meta-pnl">// REAL_MONEY_SIMULATION</div>
+        <section class="dual-chart-grid">
+          <article class="chart-card">
+            <h3>Forecast Band</h3>
+            <canvas id="forecast-chart" height="120"></canvas>
+          </article>
+          <article class="chart-card">
+            <h3>Volume Trend</h3>
+            <canvas id="volume-chart" height="120"></canvas>
+          </article>
+        </section>
+
+        <div id="price-data-table-container"></div>
+
+        <section id="backtest-analytics" class="explanation-area" style="display:none;">
+          <div class="result-header compact">
+            <div class="header-main">Backtest Performance</div>
           </div>
-          <div id="bt-metrics-grid" class="result-grid"
-            style="grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px;">
-            <!-- Backtest metrics populated here -->
-          </div>
-          <div class="chart-area" style="height: 300px; padding: 12px; background: rgba(0,0,0,0.3);">
+          <div id="bt-metrics-grid" class="result-grid compact-grid"></div>
+          <div class="chart-area small-chart">
             <canvas id="equity-chart"></canvas>
           </div>
-        </div>
+        </section>
 
-        <div id="risk-protocol" class="explanation-area"
-          style="display:none; margin-top: 24px; border-top: 1px solid var(--border);">
-          <div class="result-header">
-            <div class="header-main" style="color: var(--danger);">RISK_PROTOCOL // CAPITAL_PRESERVATION</div>
+        <section id="risk-protocol" class="explanation-area" style="display:none;">
+          <div class="result-header compact">
+            <div class="header-main">Risk Protocol</div>
           </div>
-          <div id="risk-metrics-grid" class="result-grid" style="grid-template-columns: repeat(3, 1fr); gap: 12px;">
-            <!-- Risk sizing populated here -->
-          </div>
-        </div>
+          <div id="risk-metrics-grid" class="result-grid compact-grid"></div>
+        </section>
 
-        <div id="fundamentals-view" class="explanation-area"
-          style="margin-top: 24px; border-left: 2px solid var(--accent); display:none;">
-          <!-- Fundamentals populated here -->
-        </div>
+        <section id="fundamentals-view" class="explanation-area" style="display:none;"></section>
+        <section id="explanation-view" class="explanation-area"></section>
 
-        <div id="explanation-view" class="explanation-area"></div>
-
-        <div class="json-toggle-area">
-          <label>RAW_TELEMETRY</label>
-          <pre id="result-json" class="raw-data-box">CONNECTION_IDLE</pre>
-        </div>
+        <section class="json-toggle-area">
+          <label for="result-json">Raw Response</label>
+          <pre id="result-json" class="raw-data-box">No response yet</pre>
+        </section>
       </div>
 
-      <!-- Tab: Scanner -->
-      <div id="tab-scan" class="tab-pane">
+      <div id="tab-scan" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-scan" tabindex="0" hidden>
         <div class="result-header">
-          <div class="header-main">MARKET_SCANNER</div>
-          <div class="header-meta" id="scan-meta">// SECTOR: NIFTY50</div>
+          <div>
+            <div class="header-main">Market Scanner</div>
+            <div class="header-meta" id="scan-meta">Preset: NIFTY50</div>
+          </div>
         </div>
-
-        <div class="scanner-controls" style="margin-bottom: 24px;">
-          <button id="btn-run-scan" class="btn-primary" style="width: auto; padding: 10px 20px;">INITIATE_SCAN</button>
-          <select id="scan-preset" style="width: auto; margin-left:12px;">
-            <option value="NIFTY50">NIFTY 50 (India)</option>
-            <option value="BLUECHIP_US">Blue Chip (USA)</option>
+        <div class="scanner-controls">
+          <button id="btn-run-scan" class="btn-primary" type="button">Run Scan</button>
+          <label class="sr-only" for="scan-preset">Scan preset</label>
+          <select id="scan-preset">
+            <option value="NIFTY50">NIFTY 50</option>
+            <option value="BLUECHIP_US">US Bluechip</option>
           </select>
         </div>
-
-        <div class="table-container" style="overflow-x: auto;">
-          <table class="data-table" id="scanner-table"
-            style="width:100%; border-collapse: collapse; font-family: var(--font-data); font-size: 0.8rem;">
+        <div class="table-container">
+          <table class="data-table" id="scanner-table">
+            <caption class="sr-only">Scanner results with latest price movement and model direction</caption>
             <thead>
-              <tr style="border-bottom: 1px solid var(--border); text-align: left; color: var(--accent);">
-                <th style="padding: 12px;">TICKER</th>
-                <th style="padding: 12px;">PRICE</th>
-                <th style="padding: 12px;">CHANGE_%</th>
-                <th style="padding: 12px;">RSI_14</th>
-                <th style="padding: 12px;">SIGNAL</th>
-                <th style="padding: 12px;">AI_DIR</th>
+              <tr>
+                <th>Ticker</th>
+                <th>Price</th>
+                <th>Change %</th>
+                <th>Volume</th>
+                <th>RSI</th>
+                <th>Signal</th>
+                <th>AI Direction</th>
               </tr>
             </thead>
             <tbody id="scanner-tbody">
-              <tr>
-                <td colspan="6" style="text-align:center; padding: 40px; color: var(--text-muted);">READY_FOR_SCAN</td>
-              </tr>
+              <tr><td colspan="7" class="empty-cell">Ready to scan</td></tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <!-- Tab: Analysis -->
-      <div id="tab-analysis" class="tab-pane">
+      <div id="tab-analysis" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-analysis" tabindex="0" hidden>
         <div class="result-header">
-          <div class="header-main">TECHNICAL_INVENTORY</div>
-          <div id="analysis-meta" class="header-meta">// NO_ACTIVE_TARGET</div>
+          <div>
+            <div class="header-main">Technical Analysis</div>
+            <div id="analysis-meta" class="header-meta">No active target</div>
+          </div>
         </div>
-        <div id="analysis-grid" class="result-grid">
-          <!-- Populated by JS -->
-        </div>
+        <div id="analysis-grid" class="result-grid"></div>
       </div>
 
-      <!-- Tab: Portfolio -->
-      <div id="tab-portfolio" class="tab-pane">
+      <div id="tab-portfolio" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-portfolio" tabindex="0" hidden>
         <div class="result-header">
-          <div class="header-main">PORTFOLIO_MANAGEMENT</div>
-          <div id="portfolio-meta" class="header-meta">// TOTAL_VALUE: --</div>
+          <div>
+            <div class="header-main">Portfolio Monitor</div>
+            <div id="portfolio-meta" class="header-meta">No positions loaded</div>
+          </div>
         </div>
-        <div class="scanner-controls" style="margin-bottom: 24px;">
-          <input id="port-ticker" type="text" placeholder="TICKER" style="width: 100px;">
-          <input id="port-qty" type="number" placeholder="QTY" style="width: 80px; margin-left: 8px;">
-          <input id="port-price" type="number" placeholder="AVG_PRICE" style="width: 100px; margin-left: 8px;">
-          <button id="btn-add-port" class="btn-primary"
-            style="width: auto; padding: 10px 20px; margin-left: 12px;">ADD_POSITION</button>
+        <div class="scanner-controls">
+          <label class="sr-only" for="port-ticker">Portfolio ticker</label>
+          <input id="port-ticker" type="text" placeholder="Ticker" />
+          <label class="sr-only" for="port-qty">Portfolio quantity</label>
+          <input id="port-qty" type="number" placeholder="Qty" />
+          <label class="sr-only" for="port-price">Portfolio average price</label>
+          <input id="port-price" type="number" placeholder="Avg Price" />
+          <button id="btn-add-port" class="btn-primary" type="button">Add Position</button>
         </div>
         <div class="table-container">
-          <table class="data-table" id="portfolio-table" style="width: 100%;">
+          <table class="data-table" id="portfolio-table">
+            <caption class="sr-only">Portfolio positions with quantity, average price, and live P and L tracking</caption>
             <thead>
-              <tr style="text-align: left; color: var(--accent);">
-                <th style="padding: 12px;">TICKER</th>
-                <th style="padding: 12px;">QTY</th>
-                <th style="padding: 12px;">AVG_PRICE</th>
-                <th style="padding: 12px;">CURRENT</th>
-                <th style="padding: 12px;">P&L_%</th>
-                <th style="padding: 12px;">ACTION</th>
+              <tr>
+                <th>Ticker</th>
+                <th>Qty</th>
+                <th>Avg Price</th>
+                <th>Current</th>
+                <th>P/L %</th>
+                <th>P/L Value</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody id="portfolio-tbody">
-              <tr>
-                <td colspan="6" style="text-align:center; padding: 20px;">NO_DATA</td>
-              </tr>
+              <tr><td colspan="7" class="empty-cell">No data</td></tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <!-- Tab: Watchlist -->
-      <div id="tab-watchlist" class="tab-pane">
+      <div id="tab-watchlist" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-watchlist" tabindex="0" hidden>
         <div class="result-header">
-          <div class="header-main">RADAR_WATCHLIST</div>
-          <div class="header-meta">// MONITORING_ACTIVE</div>
+          <div>
+            <div class="header-main">Watchlist Radar</div>
+            <div class="header-meta">Realtime monitor</div>
+          </div>
         </div>
-        <div class="scanner-controls" style="margin-bottom: 24px;">
-          <input id="watch-ticker" type="text" placeholder="TICKER" style="width: 150px;">
-          <button id="btn-add-watch" class="btn-primary"
-            style="width: auto; padding: 10px 20px; margin-left:12px;">ADD_TO_RADAR</button>
+        <div class="scanner-controls">
+          <label class="sr-only" for="watch-ticker">Watchlist ticker</label>
+          <input id="watch-ticker" type="text" placeholder="Ticker" />
+          <button id="btn-add-watch" class="btn-primary" type="button">Add to Watchlist</button>
         </div>
         <div class="table-container">
-          <table class="data-table" id="watchlist-table" style="width: 100%;">
+          <table class="data-table" id="watchlist-table">
+            <caption class="sr-only">Watchlist of monitored symbols with realtime status updates</caption>
             <thead>
-              <tr style="text-align: left; color: var(--accent);">
-                <th style="padding: 12px;">TICKER</th>
-                <th style="padding: 12px;">EXCHANGE</th>
-                <th style="padding: 12px;">STATUS</th>
-                <th style="padding: 12px;">ACTION</th>
+              <tr>
+                <th>Ticker</th>
+                <th>Price</th>
+                <th>Change</th>
+                <th>Exchange</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody id="watchlist-tbody">
-              <tr>
-                <td colspan="4" style="text-align:center; padding: 20px;">EMPTY_RADAR</td>
-              </tr>
+              <tr><td colspan="5" class="empty-cell">Watchlist empty</td></tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <!-- Tab: Quant Analytics -->
-      <div id="tab-quant" class="tab-pane">
+      <div id="tab-quant" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-quant" tabindex="0" hidden>
         <div class="result-header">
-          <div class="header-main">QUANTUM_INTELLIGENCE // PORTFOLIO_HYGIENE</div>
-          <div class="header-meta">// SECTOR_ROTATION // CORRELATION // RISK_SIM</div>
-        </div>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-          <!-- Sector Rotation -->
-          <div class="mini-card" style="padding: 24px;">
-            <h3 style="color: var(--accent); margin-bottom: 16px;">SECTOR_ROTATION_LEADERBOARD</h3>
-            <div id="sector-rotation-list">
-              <!-- Populated by JS -->
-              <div style="text-align:center; padding: 20px; color: var(--text-muted);">INITIALIZING_SCAN...</div>
-            </div>
-          </div>
-
-          <!-- Correlation Map -->
-          <div class="mini-card" style="padding: 24px;">
-            <h3 style="color: var(--accent); margin-bottom: 16px;">PORTFOLIO_CORRELATION_MATRIX</h3>
-            <div id="correlation-map" style="font-family: var(--font-data); font-size: 0.7rem; overflow-x: auto;">
-              <div style="text-align:center; padding: 20px; color: var(--text-muted);">DATA_REQUIRED:
-                ADD_SYMBOLS_TO_PORTFOLIO</div>
-            </div>
+          <div>
+            <div class="header-main">Quant Analytics</div>
+            <div class="header-meta">Sector rotation, correlation, risk simulation</div>
           </div>
         </div>
-
-        <!-- Risk Impact Simulation -->
-        <div class="mini-card" style="margin-top: 24px; padding: 24px;">
-          <h3 style="color: var(--accent); margin-bottom: 8px;">STRATEGY_RISK_IMPACT_SIMULATION</h3>
-          <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 20px;">Buy-and-Hold (Static) vs.
-            ATR-Trailing-Stop (Dynamic Risk Management)</p>
-          <div class="input-group" style="max-width: 400px; display: flex; gap: 8px;">
-            <input id="risk-sim-ticker" type="text" placeholder="TICKER (e.g. RELIANCE)" />
-            <button id="btn-run-risk-sim" class="btn-primary" style="padding: 8px 16px;">RUN_SIM</button>
+        <div class="quant-grid">
+          <article class="mini-card">
+            <h3>Sector Rotation</h3>
+            <div id="sector-rotation-list" class="scroll-panel">
+              <div class="empty-cell">Loading...</div>
+            </div>
+          </article>
+          <article class="mini-card">
+            <h3>Correlation Matrix</h3>
+            <div id="correlation-map" class="scroll-panel">
+              <div class="empty-cell">Add symbols to portfolio</div>
+            </div>
+          </article>
+        </div>
+        <article class="mini-card risk-sim-card">
+          <h3>Risk Impact Simulation</h3>
+          <div class="scanner-controls compact">
+            <label class="sr-only" for="risk-sim-ticker">Risk simulation ticker</label>
+            <input id="risk-sim-ticker" type="text" placeholder="Ticker (e.g. RELIANCE)" />
+            <button id="btn-run-risk-sim" class="btn-primary" type="button">Run Simulation</button>
           </div>
-          <div class="chart-area" style="height: 350px; margin-top: 20px; background: rgba(0,0,0,0.2);">
+          <div class="chart-area small-chart">
             <canvas id="risk-impact-chart"></canvas>
           </div>
-        </div>
+        </article>
       </div>
 
-      <section class="health-footer">
+      <footer class="health-footer">
         <div class="health-stats">
-          <button id="btn-health" class="btn-ghost"
-            style="padding:0; text-decoration: underline;">REFRESH_SYSTEM</button>
-          <span id="health-view" style="margin-left: 12px;">...</span>
+          <button id="btn-health" class="btn-ghost" type="button">Refresh Health</button>
+          <div id="health-view" role="status" aria-live="polite"></div>
         </div>
-        <div class="disclaimer-text">
-          RESEARCH_PROTOCOLS_ONLY // NOT_FINANCIAL_ADVICE // (C) 2026
-        </div>
-      </section>
+        <div class="disclaimer-text">Educational and research use only. Not financial advice.</div>
+      </footer>
     </section>
   </main>
 
-  <!-- Neural Chat Widget -->
-  <div class="chat-toggle" id="chat-toggle">
-    <span class="chat-icon">💬</span>
-  </div>
+  <button class="chat-toggle" id="chat-toggle" type="button" aria-label="Open chat" aria-controls="chat-box" aria-expanded="false">Chat</button>
 
-  <div class="chat-container hidden" id="chat-box">
-    <div class="chat-header">
-      <div class="chat-title">NEURAL_CHAT_v1</div>
-      <button class="chat-close" id="chat-close">×</button>
-    </div>
+  <section class="chat-container hidden" id="chat-box" aria-label="Assistant chat" aria-hidden="true">
+    <header class="chat-header">
+      <div class="chat-title">Neural Assistant</div>
+      <button class="chat-close" id="chat-close" type="button" aria-label="Close chat">x</button>
+    </header>
     <div class="chat-messages" id="chat-messages">
-      <div class="msg msg--bot">Awaiting neural commands. Type 'help' to see protocols.</div>
+      <div class="msg msg--bot">Assistant online. Ask for predictions, scanner, or risk analysis.</div>
     </div>
     <div class="chat-input-area">
-      <input type="text" id="chat-input" placeholder="Enter command..." autocomplete="off">
-      <button id="chat-send" class="chat-send-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-          stroke-linejoin="round">
-          <line x1="22" y1="2" x2="11" y2="13"></line>
-          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-        </svg>
-      </button>
+      <input type="text" id="chat-input" placeholder="Type your message..." autocomplete="off" />
+      <button id="chat-send" class="chat-send-btn" type="button">Send</button>
     </div>
-  </div>
+  </section>
 
-  <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="static/app.js"></script>
+  <script src="static/app.js?v=2"></script>
+  <script src="static/realtime_indicator.js?v=2"></script>
+  <script src="static/enhanced_realtime.js?v=2"></script>
+  <script src="static/price_table_component.js?v=2"></script>
+  <script src="static/app_enhancements.js?v=2"></script>
 </body>
-
 </html>

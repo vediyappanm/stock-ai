@@ -100,19 +100,28 @@ def format_error_response(
         failed = exc.failed_step or failed_step
         completed = exc.completed_steps or completed_steps
         message = sanitize_error_message(exc.message)
+
+        # Expected workflow/domain errors should not emit full stack traces.
+        logger.warning(
+            "Workflow failure category=%s failed_step=%s workflow_id=%s message=%s",
+            category,
+            failed,
+            workflow_id,
+            message,
+        )
     else:
         category = "UNKNOWN_ERROR"
         failed = failed_step
         completed = completed_steps
         message = sanitize_error_message(str(exc))
 
-    logger.exception(
-        "Workflow failure category=%s failed_step=%s workflow_id=%s",
-        category,
-        failed,
-        workflow_id,
-        exc_info=exc,
-    )
+        logger.exception(
+            "Workflow failure category=%s failed_step=%s workflow_id=%s",
+            category,
+            failed,
+            workflow_id,
+            exc_info=exc,
+        )
 
     return ErrorResponse(
         error_category=category,
@@ -122,3 +131,47 @@ def format_error_response(
         workflow_id=workflow_id,
         disclaimer=settings.disclaimer,
     )
+
+def safe_float(v: any) -> float:
+    """Sanitize float values for JSON compliance (no NaN/Inf)."""
+    try:
+        f = float(v)
+        import math
+        if math.isnan(f) or math.isinf(f):
+            return 0.0
+        return f
+    except (ValueError, TypeError):
+        return 0.0
+
+def clean_payload(obj: any) -> any:
+    """Recursively sanitize all types, especially numpy/float bounds, for JSON compliance."""
+    import math
+    from typing import Any
+    try:
+        import numpy as np
+    except ImportError:
+        np = None
+
+    if isinstance(obj, dict):
+        return {k: clean_payload(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [clean_payload(x) for x in obj]
+    elif np is not None and isinstance(obj, (np.float32, np.float64, np.number)):
+        f_val = float(obj)
+        if not math.isfinite(f_val):
+            return 0.0
+        return f_val
+    elif isinstance(obj, float):
+        if not math.isfinite(obj):
+            return 0.0
+        return obj
+    elif isinstance(obj, bool):
+        return obj
+    elif np is not None and isinstance(obj, (np.integer, int)):
+        return int(obj)
+    # Handle Pydantic models
+    elif hasattr(obj, "model_dump") and callable(obj.model_dump):
+        return clean_payload(obj.model_dump())
+    elif hasattr(obj, "dict") and callable(obj.dict):
+        return clean_payload(obj.dict())
+    return obj

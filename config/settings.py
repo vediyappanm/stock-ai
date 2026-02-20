@@ -11,6 +11,24 @@ class Settings(BaseSettings):
     # API Configuration
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    cors_allowed_origins: List[str] = [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
+    cors_allow_credentials: bool = True
+    startup_basic_stream_enabled: bool = True
+    startup_enhanced_stream_enabled: bool = True
+    startup_stream_tickers: List[str] = [
+        "RELIANCE:NSE",
+        "TCS:NSE",
+        "HDFCBANK:NSE",
+        "INFY:NSE",
+        "NVDA:NASDAQ",
+        "AAPL:NASDAQ",
+        "TSLA:NASDAQ",
+        "BTC-USD",
+    ]
+    allowed_chart_periods: List[str] = ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]
 
     # OpenAI Configuration
     openai_api_key: str = ""
@@ -19,6 +37,9 @@ class Settings(BaseSettings):
     # Groq Configuration
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
+
+    # Finnhub Configuration
+    finnhub_api_key: str = ""
 
     # Model Hyperparameters - XGBoost
     xgb_n_estimators: int = 500
@@ -30,6 +51,7 @@ class Settings(BaseSettings):
     rf_n_estimators: int = 200
     rf_max_depth: int = 15
     rf_random_state: int = 42
+    rf_n_jobs: int = -1
 
     # Model Hyperparameters - LSTM
     lstm_hidden_size_1: int = 64

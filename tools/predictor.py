@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any
@@ -10,6 +11,7 @@ from typing import Dict, Any
 import joblib
 import pandas as pd
 
+import logging
 from config.settings import settings
 from models.ensemble import combine_predictions, compute_prediction_interval
 from models.lstm import LSTMModel
@@ -17,6 +19,8 @@ from models.random_forest import RandomForestModel
 from models.xgboost_model import XGBoostModel
 from schemas.response_schemas import Prediction
 from tools.error_handler import ModelError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -88,31 +92,63 @@ def predict_price(
     rf_prediction = 0.0
     lstm_prediction = 0.0
     
-    xgb_residual_std = 0.0
-    rf_residual_std = 0.0
-    lstm_residual_std = 0.0
+    xgb_residual_std = 1.0
+    rf_residual_std = 1.0
+    lstm_residual_std = 1.0
     
     feature_importance: Dict[str, float] = {}
 
     loaded_from_cache = False
     if _can_reuse_models(paths, sig):
         try:
-            xgb_model.model.load_model(str(paths.xgb_file))
-            xgb_prediction = xgb_model.predict_next(indicators_df)
+            # Detailed per-model exception logging
+            try:
+                xgb_model.model.load_model(str(paths.xgb_file))
+                xgb_prediction = xgb_model.predict_next(indicators_df)
+                logger.info(f"XGBoost model loaded from cache: {paths.xgb_file}")
+            except Exception as e:
+                logger.error(f"Failed to load XGBoost model from cache: {e}")
+                raise ModelError(f"XGBoost cache load failed: {e}")
             
-            rf_model.model = joblib.load(paths.rf_file)
-            rf_prediction = rf_model.predict_next(indicators_df)
-            
-            lstm_model = LSTMModel.from_checkpoint(paths.lstm_file)
-            lstm_prediction = lstm_model.train_and_predict(indicators_df).prediction
+            try:
+                rf_model.model = joblib.load(paths.rf_file)
+                rf_prediction = rf_model.predict_next(indicators_df)
+                logger.info(f"Random Forest model loaded from cache: {paths.rf_file}")
+            except Exception as e:
+                logger.error(f"Failed to load Random Forest model from cache: {e}")
+                raise ModelError(f"Random Forest cache load failed: {e}")
             
             meta = _load_meta(paths.meta_file)
-            xgb_residual_std = float(meta.get("xgb_residual_std", 1.0))
-            rf_residual_std = float(meta.get("rf_residual_std", 0.0))
-            lstm_residual_std = float(meta.get("lstm_residual_std", 0.0))
+            # Ensure residual_std is never 0 or NaN to prevent interval collapse
+            def safe_std(v):
+                v = float(v)
+                return 1.0 if not math.isfinite(v) or v <= 0 else v
+
+            xgb_residual_std = safe_std(meta.get("xgb_residual_std", 1.0))
+            rf_residual_std = safe_std(meta.get("rf_residual_std", 1.0))
+            lstm_residual_std = safe_std(meta.get("lstm_residual_std", 1.0))
             feature_importance = meta.get("feature_importance", {})
+            
+            # 1. Use cached predictions from meta if non-zero/valid
+            cached_lstm = meta.get("lstm_prediction", 0)
+            if cached_lstm and not math.isnan(float(cached_lstm)) and float(cached_lstm) != 0:
+                 lstm_prediction = float(cached_lstm)
+                 logger.info(f"Using cached LSTM prediction: {lstm_prediction}")
+            else:
+                 # 2. If no valid cached prediction, try loading model to re-infer
+                 try:
+                     lstm_model = LSTMModel.from_checkpoint(paths.lstm_file)
+                     lstm_prediction = lstm_model.train_and_predict(indicators_df).prediction
+                     logger.info(f"LSTM prediction re-inferred from checkpoint: {lstm_prediction}")
+                 except Exception as e:
+                     # 3. If model load fails, trigger full retrain
+                     raise ModelError(f"Cached LSTM invalid and re-inference failed: {e}")
+
             loaded_from_cache = True
-        except Exception:
+            logger.info(f"All models successfully loaded from cache for {resolved_symbol}")
+        except (ModelError, Exception) as e:
+            # Atomic cache strategy: if any model fails, train all fresh
+            logger.warning(f"Cache reuse failed for {resolved_symbol}, training fresh models: {e}")
             loaded_from_cache = False
 
     if not loaded_from_cache:
@@ -147,6 +183,10 @@ def predict_price(
                 "rf_residual_std": rf_residual_std,
                 "lstm_residual_std": lstm_residual_std,
                 "feature_importance": feature_importance,
+                # Cache the predictions too
+                "xgb_prediction": xgb_prediction,
+                "rf_prediction": rf_prediction,
+                "lstm_prediction": lstm_prediction,
             }
         )
 
@@ -163,10 +203,33 @@ def predict_price(
         point = combine_predictions(xgb_prediction, rf_prediction, lstm_prediction)
         lower, upper = compute_prediction_interval(point, [xgb_residual_std, rf_residual_std, lstm_residual_std])
 
-    import math
     def safe_f(v):
-        v = float(v)
-        return 0.0 if math.isnan(v) or math.isinf(v) else v
+        try:
+            v = float(v)
+            return 0.0 if not math.isfinite(v) else v
+        except (TypeError, ValueError):
+            return 0.0
+
+    # Log LSTM degradation (not a fatal error — ensemble will reroute)
+    lstm_safe = safe_f(lstm_prediction)
+    if lstm_safe == 0.0:
+        logger.warning(
+            f"LSTM degraded for {resolved_symbol}: lstm={lstm_prediction}. "
+            f"Ensemble will use XGB+RF fallback (XGB={xgb_prediction:.2f}, RF={rf_prediction:.2f})."
+        )
+
+    # Final sanity check: only raise if the FINAL point is invalid
+    # (meaning XGB and RF also failed, not just LSTM)
+    final_point = safe_f(point)
+    if final_point == 0.0:
+        logger.error(
+            f"Complete ensemble failure for {resolved_symbol}. "
+            f"XGB={xgb_prediction}, RF={rf_prediction}, LSTM={lstm_prediction}"
+        )
+        raise ModelError(
+            f"Prediction engine returned invalid price (0.0) for {resolved_symbol}. "
+            "This may indicate insufficient training data or model convergence issues."
+        )
 
     return Prediction(
         point_estimate=safe_f(point),

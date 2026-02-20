@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chart Library Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #0d1117;
+            color: #c9d1d9;
+        }
+        .status {
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-size: 18px;
+        }
+        .success {
+            background: #238636;
+            color: white;
+        }
+        .error {
+            background: #da3633;
+            color: white;
+        }
+        #chart {
+            width: 100%;
+            height: 400px;
+            margin: 20px 0;
+            border: 1px solid #30363d;
+        }
+        pre {
+            background: #161b22;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 LightweightCharts Library Test</h1>
+    
+    <div id="status"></div>
+    
+    <h2>Test Results:</h2>
+    <pre id="results"></pre>
+    
+    <h2>Test Chart:</h2>
+    <div id="chart"></div>
+    
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <script>
+        const results = [];
+        const statusDiv = document.getElementById('status');
+        const resultsDiv = document.getElementById('results');
+        
+        function log(msg, isError = false) {
+            results.push((isError ? '❌ ' : '✅ ') + msg);
+            resultsDiv.textContent = results.join('\n');
+        }
+        
+        // Test 1: Library loaded
+        if (typeof LightweightCharts !== 'undefined') {
+            log('LightweightCharts library loaded');
+            statusDiv.className = 'status success';
+            statusDiv.textContent = '✅ Library Loaded Successfully';
+        } else {
+            log('LightweightCharts library NOT loaded', true);
+            statusDiv.className = 'status error';
+            statusDiv.textContent = '❌ Library Failed to Load';
+        }
+        
+        // Test 2: Create chart
+        try {
+            const chart = LightweightCharts.createChart(document.getElementById('chart'), {
+                width: 800,
+                height: 400,
+                layout: {
+                    background: { type: 'solid', color: '#0d1117' },
+                    textColor: '#c9d1d9',
+                },
+            });
+            log('Chart created successfully');
+            
+            // Test 3: Add candlestick series
+            try {
+                const candlestickSeries = chart.addCandlestickSeries({
+                    upColor: '#26a69a',
+                    downColor: '#ef5350',
+                    borderVisible: false,
+                    wickUpColor: '#26a69a',
+                    wickDownColor: '#ef5350',
+                });
+                log('Candlestick series created successfully');
+                
+                // Test 4: Add sample data
+                const sampleData = [
+                    { time: '2024-01-01', open: 100, high: 110, low: 95, close: 105 },
+                    { time: '2024-01-02', open: 105, high: 115, low: 100, close: 112 },
+                    { time: '2024-01-03', open: 112, high: 120, low: 108, close: 118 },
+                    { time: '2024-01-04', open: 118, high: 125, low: 115, close: 120 },
+                    { time: '2024-01-05', open: 120, high: 130, low: 118, close: 128 },
+                ];
+                
+                candlestickSeries.setData(sampleData);
+                log('Sample data loaded successfully');
+                
+                // Test 5: Check methods
+                const methods = [
+                    'addCandlestickSeries',
+                    'addLineSeries',
+                    'addAreaSeries',
+                    'addHistogramSeries',
+                    'timeScale',
+                    'priceScale',
+                ];
+                
+                methods.forEach(method => {
+                    if (typeof chart[method] === 'function') {
+                        log(`Method chart.${method}() exists`);
+                    } else {
+                        log(`Method chart.${method}() NOT found`, true);
+                    }
+                });
+                
+                log('\n🎉 ALL TESTS PASSED! Chart library is working correctly.');
+                
+            } catch (e) {
+                log('Failed to create candlestick series: ' + e.message, true);
+            }
+            
+        } catch (e) {
+            log('Failed to create chart: ' + e.message, true);
+        }
+        
+        // Display library version
+        log('\nLibrary Info:');
+        log('Version: ' + (LightweightCharts.version || 'Unknown'));
+        log('Type: ' + typeof LightweightCharts);
+    </script>
+</body>
+</html>

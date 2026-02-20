@@ -1,23 +1,30 @@
-"""Tools package exports."""
+"""Lazy exports for tools package to avoid import-time dependency cycles."""
 
-from tools.backtester import run_backtest
-from tools.explainer import generate_explanation
-from tools.fetch_data import fetch_ohlcv_data
-from tools.health_checker import get_health_status
-from tools.indicators import compute_indicators
-from tools.predictor import predict_price
-from tools.query_parser import parse_query
-from tools.sentiment import analyze_sentiment
-from tools.ticker_resolver import resolve_ticker
+from __future__ import annotations
 
-__all__ = [
-    "analyze_sentiment",
-    "compute_indicators",
-    "fetch_ohlcv_data",
-    "generate_explanation",
-    "get_health_status",
-    "parse_query",
-    "predict_price",
-    "resolve_ticker",
-    "run_backtest",
-]
+from importlib import import_module
+from typing import Dict, Tuple
+
+_EXPORTS: Dict[str, Tuple[str, str]] = {
+    "analyze_sentiment": ("tools.sentiment", "analyze_sentiment"),
+    "compute_indicators": ("tools.indicators", "compute_indicators"),
+    "fetch_ohlcv_data": ("tools.fetch_data", "fetch_ohlcv_data"),
+    "generate_explanation": ("tools.explainer", "generate_explanation"),
+    "get_health_status": ("tools.health_checker", "get_health_status"),
+    "parse_query": ("tools.query_parser", "parse_query"),
+    "predict_price": ("tools.predictor", "predict_price"),
+    "resolve_ticker": ("tools.ticker_resolver", "resolve_ticker"),
+    "run_backtest": ("tools.backtester", "run_backtest"),
+}
+
+__all__ = sorted(_EXPORTS.keys())
+
+
+def __getattr__(name: str):
+    if name not in _EXPORTS:
+        raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+    module_name, attr_name = _EXPORTS[name]
+    module = import_module(module_name)
+    value = getattr(module, attr_name)
+    globals()[name] = value
+    return value
