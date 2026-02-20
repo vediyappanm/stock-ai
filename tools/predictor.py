@@ -190,6 +190,11 @@ def predict_price(
             }
         )
 
+    # Extract latest volatility for dynamic ensemble weighting
+    vol_20d = None
+    if "Vol_20d" in indicators_df.columns:
+        vol_20d = float(indicators_df["Vol_20d"].iloc[-1]) if indicators_df["Vol_20d"].iloc[-1] > 0 else None
+
     if model_type == "random_forest":
         point = rf_prediction
         lower, upper = compute_prediction_interval(point, [rf_residual_std])
@@ -200,7 +205,7 @@ def predict_price(
         point = xgb_prediction
         lower, upper = compute_prediction_interval(point, [xgb_residual_std])
     else:
-        point = combine_predictions(xgb_prediction, rf_prediction, lstm_prediction)
+        point = combine_predictions(xgb_prediction, rf_prediction, lstm_prediction, volatility=vol_20d)
         lower, upper = compute_prediction_interval(point, [xgb_residual_std, rf_residual_std, lstm_residual_std])
 
     def safe_f(v):

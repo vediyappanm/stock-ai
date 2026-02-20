@@ -1,4 +1,4 @@
-"""Walk-forward backtesting engine using Random Forest."""
+"""Walk-forward backtesting engine using Random Forest + Ensemble."""
 
 from __future__ import annotations
 
@@ -10,8 +10,14 @@ import pandas as pd
 
 from config.settings import settings
 from models.random_forest import FEATURE_COLUMNS, RandomForestModel
+from models.xgboost_model import XGBoostModel
+from models.lstm import LSTMModel
+from models.ensemble import combine_predictions
 from schemas.response_schemas import BacktestResult
 from tools.error_handler import DataError
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _metrics(actual: List[float], predicted: List[float], base_prices: List[float]) -> BacktestResult:
@@ -40,7 +46,9 @@ def _metrics(actual: List[float], predicted: List[float], base_prices: List[floa
 
 def run_backtest(indicators_df: pd.DataFrame, days: int | None = None) -> BacktestResult:
     """
-    Walk-forward validation using only Random Forest.
+    Walk-forward validation using ensemble (XGB + RF + LSTM).
+    Trains on all historical data up to step, predicts next, then walks forward.
+    This replicates live trading conditions: no lookahead bias.
     """
     period_days = days or settings.default_backtest_days
     if period_days < settings.min_backtest_days or period_days > settings.max_backtest_days:
@@ -65,10 +73,42 @@ def run_backtest(indicators_df: pd.DataFrame, days: int | None = None) -> Backte
 
     for idx in range(start, len(df) - 1):
         train_slice = df.iloc[: idx + 1].copy()
-        model = RandomForestModel()
-        model.train(train_slice)
 
-        predicted_next = model.predict_next(train_slice)
+        # Train ensemble models
+        try:
+            xgb_model = XGBoostModel()
+            xgb_pred = xgb_model.train(train_slice)
+            xgb_next = xgb_model.predict_next(train_slice)
+        except Exception as e:
+            logger.debug(f"XGB training failed at idx {idx}: {e}")
+            xgb_next = None
+
+        try:
+            rf_model = RandomForestModel()
+            rf_result = rf_model.train(train_slice)
+            rf_next = rf_model.predict_next(train_slice)
+        except Exception as e:
+            logger.debug(f"RF training failed at idx {idx}: {e}")
+            rf_next = None
+
+        try:
+            lstm_model = LSTMModel()
+            lstm_result = lstm_model.train_and_predict(train_slice)
+            lstm_next = lstm_result.prediction
+        except Exception as e:
+            logger.debug(f"LSTM training failed at idx {idx}: {e}")
+            lstm_next = None
+
+        # Combine predictions dynamically (with volatility)
+        vol_20d = float(train_slice["Vol_20d"].iloc[-1]) if "Vol_20d" in train_slice.columns and train_slice["Vol_20d"].iloc[-1] > 0 else None
+
+        try:
+            predicted_next = combine_predictions(xgb_prediction=xgb_next, rf_prediction=rf_next, lstm_prediction=lstm_next, volatility=vol_20d)
+        except Exception as e:
+            # Fallback: use RF only
+            logger.debug(f"Ensemble combination failed at idx {idx}, using RF only: {e}")
+            predicted_next = float(rf_next) if rf_next is not None else 0.0
+
         actual_next = float(df.iloc[idx + 1]["Close"])
         base_close = float(df.iloc[idx]["Close"])
 

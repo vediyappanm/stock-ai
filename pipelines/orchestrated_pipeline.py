@@ -15,6 +15,7 @@ from tools.backtester import run_backtest
 from tools.explainer import generate_explanation
 from tools.fetch_data import fetch_ohlcv_data
 from tools.indicators import compute_indicators
+from tools.macro_features import fetch_macro_features
 from tools.predictor import predict_price
 from tools.query_parser import parse_query
 from tools.sentiment import analyze_sentiment
@@ -60,8 +61,10 @@ def execute_prediction_pipeline(request: PredictRequest) -> PredictResponse:
 
     def step_compute_indicators(ctx: MutableMapping[str, object]) -> None:
         ohlcv = ctx["ohlcv"]
-        indicators = compute_indicators(ohlcv)  # type: ignore[arg-type]
+        macro_data = fetch_macro_features()
+        indicators = compute_indicators(ohlcv, macro_data=macro_data)  # type: ignore[arg-type]
         ctx["indicators"] = indicators
+        ctx["macro_data"] = macro_data
 
     def step_predict(ctx: MutableMapping[str, object]) -> None:
         req: PredictRequest = ctx["request"]  # type: ignore[assignment]

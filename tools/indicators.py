@@ -43,7 +43,9 @@ INDICATOR_COLUMNS = [
     "ATR_14", "OBV", "MFI_14", "VWAP",
     "Stochastic_K", "Stochastic_D",
     "Return_1d", "Return_3d", "Return_5d",
-    "Vol_10d", "Vol_20d"
+    "Vol_10d", "Vol_20d",
+    "Price_Diff_1d", "Price_Diff_5d", "Price_Momentum_20",
+    "VIX", "Yield_10Y", "FedRate"
 ]
 
 
@@ -62,12 +64,26 @@ def _validate_input(df: pd.DataFrame) -> None:
         )
 
 
-def compute_indicators(ohlcv: pd.DataFrame) -> pd.DataFrame:
+def compute_indicators(ohlcv: pd.DataFrame, macro_data: pd.DataFrame | None = None) -> pd.DataFrame:
     """
-    Compute 40+ professional indicators for high-alpha ML feature engineering.
+    Compute 40+ professional indicators + macro features for high-alpha ML feature engineering.
+    macro_data: optional DataFrame with VIX, Yield_10Y, FedRate columns
     """
     _validate_input(ohlcv)
     df = ohlcv.copy().reset_index(drop=True)
+
+    # Merge macro features if provided
+    if macro_data is not None and not macro_data.empty:
+        df["Date"] = pd.to_datetime(df["Date"])
+        macro_data_copy = macro_data.copy()
+        macro_data_copy["Date"] = pd.to_datetime(macro_data_copy["Date"])
+        df = df.merge(macro_data_copy[["Date", "VIX", "Yield_10Y", "FedRate"]], on="Date", how="left")
+        df[["VIX", "Yield_10Y", "FedRate"]] = df[["VIX", "Yield_10Y", "FedRate"]].ffill().fillna(0.0)
+    else:
+        # Initialize with zeros if not provided
+        df["VIX"] = 0.0
+        df["Yield_10Y"] = 0.0
+        df["FedRate"] = 0.0
 
     close = df["Close"]
     high = df["High"]
@@ -145,6 +161,12 @@ def compute_indicators(ohlcv: pd.DataFrame) -> pd.DataFrame:
     df["Return_5d"] = close.pct_change(5)
     df["Vol_10d"] = df["Return_1d"].rolling(10).std()
     df["Vol_20d"] = df["Return_1d"].rolling(20).std()
+
+    # Non-Stationarity Handling: Price Differencing & Momentum
+    # These reduce dependence on absolute price levels
+    df["Price_Diff_1d"] = close.diff(1)
+    df["Price_Diff_5d"] = close.diff(5)
+    df["Price_Momentum_20"] = (close - close.shift(20)) / close.shift(20)  # 20-day momentum
 
     # Final cleanup — always apply to handle NaN/Inf from warmup periods
     import numpy as _np
