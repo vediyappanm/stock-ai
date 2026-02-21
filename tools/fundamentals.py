@@ -80,6 +80,34 @@ def _get_finnhub_fundamentals(symbol: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _get_yahoo_direct_fundamentals(symbol: str) -> Optional[Dict[str, Any]]:
+    """Fetch basics from Yahoo Finance v7 Quote API (more resilient than info scraper)."""
+    try:
+        url = f"https://query2.finance.yahoo.com/v7/finance/quote?symbols={symbol}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"}
+        with httpx.Client(timeout=10) as client:
+            resp = client.get(url, headers=headers)
+            if resp.status_code == 200:
+                result = resp.json().get("quoteResponse", {}).get("result", [None])[0]
+                if result:
+                    return {
+                        "name": result.get("longName") or result.get("shortName") or "N/A",
+                        "sector": "N/A", # Not in quote API
+                        "industry": "N/A",
+                        "market_cap": safe_float(result.get("marketCap", 0)),
+                        "pe_ratio": safe_float(result.get("trailingPE", 0.0)),
+                        "forward_pe": safe_float(result.get("forwardPE", 0.0)),
+                        "dividend_yield": safe_float(result.get("dividendYield", 0.0)) / 100, # convert pct
+                        "beta": safe_float(result.get("beta", 0.0)),
+                        "fifty_two_week_high": safe_float(result.get("fiftyTwoWeekHigh", 0.0)),
+                        "fifty_two_week_low": safe_float(result.get("fiftyTwoWeekLow", 0.0)),
+                        "summary": f"Market Data for {symbol} captured via Yahoo Direct API."
+                    }
+    except Exception as e:
+        logger.debug("Yahoo Direct fundamentals error: %s", e)
+    return None
+
+
 from tools.yf_helper import get_yf_session
 
 def get_fundamentals(ticker: str, exchange: str = "NSE") -> Dict[str, Any]:
@@ -99,15 +127,22 @@ def get_fundamentals(ticker: str, exchange: str = "NSE") -> Dict[str, Any]:
         _set_cached(cache_key, result)
         return result
 
-    # 2. Try yfinance (Fallback)
+    # 2. Try Yahoo Direct (Resilient fallback)
+    result = _get_yahoo_direct_fundamentals(symbol)
+    if result:
+        logger.info("Fundamentals: Yahoo Direct HIT for %s", symbol)
+        _set_cached(cache_key, result)
+        return result
+
+    # 3. Try yfinance (Last resort - likely to fail on cloud)
     try:
-        logger.info("Fundamentals: yfinance fallback for %s", symbol)
+        logger.info("Fundamentals: yfinance last resort for %s", symbol)
         session = get_yf_session()
         stock = yf.Ticker(symbol, session=session)
         info = stock.info
-        if info and "longName" in info:
+        if info and ("longName" in info or "shortName" in info):
             result = {
-                "name": info.get("longName", "N/A"),
+                "name": info.get("longName", info.get("shortName", "N/A")),
                 "sector": info.get("sector", "N/A"),
                 "industry": info.get("industry", "N/A"),
                 "market_cap": safe_float(info.get("marketCap", 0)),

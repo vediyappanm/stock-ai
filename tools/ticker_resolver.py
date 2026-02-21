@@ -29,9 +29,17 @@ _COMMON_ALIASES: Dict[str, str] = {
     "AMAZON": "AMZN", "AMZN": "AMZN", "NVIDIA": "NVDA", "NVDIA": "NVDA", "NVDA": "NVDA",
     "META": "META", "FACEBOOK": "META", "NETFLIX": "NFLX", "NFLX": "NFLX",
     "AMD": "AMD", "INTEL": "INTC", "INTC": "INTC", "BITCOIN": "BTC-USD",
+    "PALANTIR": "PLTR", "PLTR": "PLTR", "SNOWFLAKE": "SNOW", "SNOW": "SNOW",
+    "ALIBABA": "BABA", "BABA": "BABA", "COINBASE": "COIN", "COIN": "COIN",
+    "MICROSTRATEGY": "MSTR", "MSTR": "MSTR", "DISNEY": "DIS", "DIS": "DIS",
+    "NIKE": "NKE", "NKE": "NKE", "VISA": "V", "V": "V",
 }
 
-_US_TICKERS = {"AAPL", "TSLA", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "NFLX", "AMD", "INTC", "BTC-USD"}
+_US_TICKERS = {
+    "AAPL", "TSLA", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "NFLX", "AMD", "INTC", 
+    "BTC-USD", "PLTR", "SNOW", "BABA", "COIN", "MSTR", "DIS", "NKE", "V", "MA", 
+    "PYPL", "SQ", "UBER", "LYFT", "ABNB", "TSM", "ASML", "CRM"
+}
 
 @dataclass(frozen=True)
 class _Resolved:

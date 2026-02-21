@@ -421,11 +421,12 @@ function renderTVChart(ohlcvData) {
   const volumeSeries = chart.addHistogramSeries({
     color: '#26a69a',
     priceFormat: { type: 'volume' },
-    priceScaleId: '', // set as overlay
+    priceScaleId: 'volume', // don't share scale with price
   });
 
-  volumeSeries.priceScale().applyOptions({
+  chart.priceScale('volume').applyOptions({
     scaleMargins: { top: 0.8, bottom: 0 },
+    visible: false,
   });
 
   const formattedData = ohlcvData.map(d => ({
