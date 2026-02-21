@@ -168,9 +168,16 @@ def predict_price(
 
         def run_lstm():
             logger.info("Training LSTM...")
-            model = LSTMModel()
-            res = model.train_and_predict(indicators_df)
-            return res.prediction, res.residual_std, model
+            try:
+                model = LSTMModel()
+                res = model.train_and_predict(indicators_df)
+                return res.prediction, res.residual_std, model
+            except ModelError as e:
+                logger.warning(f"LSTM skipped (Torch not available): {e}")
+                return 0.0, 1.0, None
+            except Exception as e:
+                logger.error(f"LSTM unexpected failure: {e}")
+                return 0.0, 1.0, None
 
         with ThreadPoolExecutor(max_workers=3) as executor:
             fut_xgb = executor.submit(run_xgb)
@@ -184,7 +191,8 @@ def predict_price(
         # Save
         xgb_model.model.save_model(str(paths.xgb_file))
         joblib.dump(rf_model.model, paths.rf_file)
-        lstm_model_obj.save_checkpoint(paths.lstm_file)
+        if lstm_model_obj is not None:
+             lstm_model_obj.save_checkpoint(paths.lstm_file)
         
         feature_importance = xgb_importance # Primary
         
