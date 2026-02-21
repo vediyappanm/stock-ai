@@ -9,10 +9,14 @@ logger = logging.getLogger(__name__)
 
 try:
     import yfinance as yf
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
     _HAS_YF = True
 except Exception:
     _HAS_YF = False
 
+from tools.yf_helper import get_yf_session
 
 def fetch_macro_features(start_date: str | None = None, end_date: str | None = None) -> pd.DataFrame:
     """
@@ -23,10 +27,13 @@ def fetch_macro_features(start_date: str | None = None, end_date: str | None = N
         logger.warning("yfinance not available for macro features")
         return pd.DataFrame()
 
+    session = get_yf_session()
+
     try:
         # Download each symbol separately and handle multi-index columns
         def download_and_clean(symbol: str, column_name: str):
-            data = yf.download(symbol, start=start_date, end=end_date, progress=False)
+            logger.info(f"Macro: fetching {symbol}")
+            data = yf.download(symbol, start=start_date, end=end_date, progress=False, session=session)
             if data.empty:
                 return pd.DataFrame(columns=["Date", column_name])
             

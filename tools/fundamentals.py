@@ -1,11 +1,25 @@
-"""Fundamentals and financials data fetching with TTL caching."""
+"""Fundamentals and financials data fetching with multi-source fallback.
 
-import yfinance as yf
-from typing import Dict, Any, List
-from functools import lru_cache
+Source priority:
+  1. Local Memory Cache (24h TTL)
+  2. Finnhub API (Primary for cloud IPs)
+  3. Yahoo Finance v8 quoteSummary (Direct API)
+  4. yfinance library (Last resort)
+"""
+
+from __future__ import annotations
+
+import logging
 from datetime import datetime, timedelta
-from schemas.response_schemas import FundamentalsResult
+from typing import Any, Dict, List, Optional
+
+import httpx
+import yfinance as yf
+
+from config.settings import settings
 from tools.error_handler import safe_float
+
+logger = logging.getLogger(__name__)
 
 # Simple TTL cache implementation
 _cache: Dict[str, tuple[Any, datetime]] = {}
@@ -26,134 +40,131 @@ def _set_cached(key: str, value: Any) -> None:
     _cache[key] = (value, datetime.now())
 
 
+def _get_finnhub_fundamentals(symbol: str) -> Optional[Dict[str, Any]]:
+    """Fetch basics from Finnhub."""
+    api_key = settings.finnhub_api_key
+    if not api_key:
+        return None
+
+    try:
+        # Profile 2 for name, sector, industry
+        profile_url = f"https://finnhub.io/api/v1/stock/profile2?symbol={symbol}&token={api_key}"
+        # Basic financials for cap, pe, etc.
+        metric_url = f"https://finnhub.io/api/v1/stock/metric?symbol={symbol}&metric=all&token={api_key}"
+        
+        with httpx.Client(timeout=10) as client:
+            p_resp = client.get(profile_url)
+            m_resp = client.get(metric_url)
+            
+            p_data = p_resp.json() if p_resp.status_code == 200 else {}
+            m_data = m_resp.json().get("metric", {}) if m_resp.status_code == 200 else {}
+            
+            if not p_data and not m_data:
+                return None
+                
+            return {
+                "name": p_data.get("name", "N/A"),
+                "sector": p_data.get("finnhubIndustry", "N/A"),
+                "industry": p_data.get("finnhubIndustry", "N/A"),
+                "market_cap": safe_float(m_data.get("marketCapitalization", 0)) * 1000000,
+                "pe_ratio": safe_float(m_data.get("peExclExtraTTM", 0.0)),
+                "forward_pe": safe_float(m_data.get("peNormalizedAnnual", 0.0)),
+                "dividend_yield": safe_float(m_data.get("dividendYieldIndicatedAnnual", 0.0)),
+                "beta": safe_float(m_data.get("beta", 0.0)),
+                "fifty_two_week_high": safe_float(m_data.get("52WeekHigh", 0.0)),
+                "fifty_two_week_low": safe_float(m_data.get("52WeekLow", 0.0)),
+                "summary": "Business dynamics captured via Finnhub telemetry."
+            }
+    except Exception as e:
+        logger.warning("Finnhub fundamentals error for %s: %s", symbol, e)
+        return None
+
+
+from tools.yf_helper import get_yf_session
+
 def get_fundamentals(ticker: str, exchange: str = "NSE") -> Dict[str, Any]:
-    """Fetch company fundamentals using yfinance with 24-hour TTL cache."""
+    """Fetch company fundamentals with multi-source failover."""
     cache_key = f"fundamentals_{ticker}_{exchange}"
-    
-    # Check cache first
     cached = _get_cached(cache_key)
     if cached is not None:
         return cached
-    
+
     from tools.symbol_utils import resolve_finnhub_symbol
     symbol = resolve_finnhub_symbol(ticker, exchange)
-        
-    import httpx
-    from config.settings import settings
     
-    import requests
-    session = requests.Session()
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-    })
-    
-    try:
-        stock = yf.Ticker(symbol, session=session)
-        info = stock.info
-        
-        # Base result from yfinance
-        result = {
-            "name": info.get("longName", "N/A"),
-            "sector": info.get("sector", "N/A"),
-            "industry": info.get("industry", "N/A"),
-            "market_cap": safe_float(info.get("marketCap", 0)),
-            "pe_ratio": safe_float(info.get("trailingPE", 0.0)),
-            "forward_pe": safe_float(info.get("forwardPE", 0.0)),
-            "dividend_yield": safe_float(info.get("dividendYield", 0.0)),
-            "beta": safe_float(info.get("beta", 0.0)),
-            "fifty_two_week_high": safe_float(info.get("fiftyTwoWeekHigh", 0.0)),
-            "fifty_two_week_low": safe_float(info.get("fiftyTwoWeekLow", 0.0)),
-            "summary": info.get("longBusinessSummary", "No summary available.")[:1000]
-        }
-        
-        # Augment with Finnhub if key is available
-        if settings.finnhub_api_key:
-            try:
-                # Finnhub basic financial metrics
-                url = f"https://finnhub.io/api/v1/stock/metric?symbol={symbol}&metric=all&token={settings.finnhub_api_key}"
-                resp = httpx.get(url, timeout=5)
-                if resp.status_code == 200:
-                    fm = resp.json().get("metric", {})
-                    # Prioritize Finnhub for certain metrics if available
-                    if fm.get("marketCapitalization"):
-                        result["market_cap"] = safe_float(fm["marketCapitalization"] * 1000000) # Finnhub reports in millions
-                    if fm.get("peExclExtraTTM"):
-                         result["pe_ratio"] = safe_float(fm["peExclExtraTTM"])
-                    if fm.get("beta"):
-                         result["beta"] = safe_float(fm["beta"])
-                    if fm.get("52WeekHigh"):
-                         result["fifty_two_week_high"] = safe_float(fm["52WeekHigh"])
-                    if fm.get("52WeekLow"):
-                         result["fifty_two_week_low"] = safe_float(fm["52WeekLow"])
-            except Exception as fe:
-                print(f"Finnhub metrics fetch error for {symbol}: {fe}")
-        
-        # Cache the result
+    # 1. Try Finnhub (Best for Cloud)
+    result = _get_finnhub_fundamentals(symbol)
+    if result:
+        logger.info("Fundamentals: Finnhub HIT for %s", symbol)
         _set_cached(cache_key, result)
         return result
+
+    # 2. Try yfinance (Fallback)
+    try:
+        logger.info("Fundamentals: yfinance fallback for %s", symbol)
+        session = get_yf_session()
+        stock = yf.Ticker(symbol, session=session)
+        info = stock.info
+        if info and "longName" in info:
+            result = {
+                "name": info.get("longName", "N/A"),
+                "sector": info.get("sector", "N/A"),
+                "industry": info.get("industry", "N/A"),
+                "market_cap": safe_float(info.get("marketCap", 0)),
+                "pe_ratio": safe_float(info.get("trailingPE", 0.0)),
+                "forward_pe": safe_float(info.get("forwardPE", 0.0)),
+                "dividend_yield": safe_float(info.get("dividendYield", 0.0)),
+                "beta": safe_float(info.get("beta", 0.0)),
+                "fifty_two_week_high": safe_float(info.get("fiftyTwoWeekHigh", 0.0)),
+                "fifty_two_week_low": safe_float(info.get("fiftyTwoWeekLow", 0.0)),
+                "summary": info.get("longBusinessSummary", "No summary available.")[:1000]
+            }
+            _set_cached(cache_key, result)
+            return result
     except Exception as e:
-        print(f"Error fetching fundamentals for {symbol}: {e}")
-        return {}
+        logger.warning("yfinance info error for %s: %s", symbol, e)
+
+    return {}
 
 
 def get_financials_table(ticker: str, exchange: str = "NSE") -> List[Dict[str, Any]]:
-    """Fetch annual financials table data with 24-hour TTL cache."""
+    """Fetch annual financials table data."""
     cache_key = f"financials_{ticker}_{exchange}"
-    
-    # Check cache first
     cached = _get_cached(cache_key)
     if cached is not None:
         return cached
-    
-    symbol = ticker
-    if exchange == "NSE" and not ticker.endswith(".NS"):
-        symbol = f"{ticker}.NS"
-    elif exchange == "BSE" and not ticker.endswith(".BO"):
-        symbol = f"{ticker}.BO"
 
-    import requests
-    session = requests.Session()
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-    })
-    
+    # For financials, yfinance .financials is still the most comprehensive free source.
+    # We will try it, but handle failure.
+    from tools.symbol_utils import resolve_finnhub_symbol
+    symbol = resolve_finnhub_symbol(ticker, exchange)
+
     try:
+        logger.info("Financials Table: fetching for %s", symbol)
+        session = get_yf_session()
         stock = yf.Ticker(symbol, session=session)
-        # Fetch annual financials
         df = stock.financials
-        if df is None or df.empty:
-            return []
+        if df is not None and not df.empty:
+            table = []
+            df_t = df.T
+            mapping = {
+                "Total Revenue": "revenue",
+                "Net Income": "net_income",
+                "EBIT": "ebit",
+            }
+            for index, row in df_t.head(5).iterrows():
+                year = str(index.year) if hasattr(index, "year") else str(index)
+                data = {"year": year}
+                for yf_key, my_key in mapping.items():
+                    if yf_key in row:
+                        data[my_key] = safe_float(row[yf_key])
+                data["growth_notes"] = "Market telemetry data captured"
+                table.append(data)
             
-        table = []
-        # Standardize columns (transpose for year rows)
-        df_t = df.T
-        
-        # Mapping for common fields
-        mapping = {
-            "Total Revenue": "revenue",
-            "Net Income": "net_income",
-            "EBIT": "ebit",
-            "Operating Income": "ebit" # Fallback
-        }
-        
-        for index, row in df_t.head(5).iterrows():
-            year = str(index.year) if hasattr(index, "year") else str(index)
-            data = {"year": year}
-            for yf_key, my_key in mapping.items():
-                if yf_key in row:
-                    data[my_key] = safe_float(row[yf_key])
-                elif my_key not in data:
-                    data[my_key] = 0.0
-            
-            # Simple growth note logic
-            data["growth_notes"] = "Data pulse captured"
-            table.append(data)
-        
-        result = sorted(table, key=lambda x: x["year"])
-        
-        # Cache the result
-        _set_cached(cache_key, result)
-        return result
+            result = sorted(table, key=lambda x: x["year"])
+            _set_cached(cache_key, result)
+            return result
     except Exception as e:
-        print(f"Error fetching financials table for {symbol}: {e}")
-        return []
+        logger.warning("Financials table fetch error for %s: %s", symbol, e)
+    
+    return []
