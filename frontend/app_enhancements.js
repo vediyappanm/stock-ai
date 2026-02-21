@@ -230,7 +230,9 @@ function renderEnhancedTVChart(ohlcvData) {
     volumeSeries = _addHistogramSeries(chart, {
       color: '#26a69a',
       priceFormat: { type: 'volume' },
-      priceScaleId: 'volume-scale', // Separate scale to avoid label overlap
+      priceScaleId: 'volume-scale',
+      lastValueVisible: false,      // Hide label on Y-axis
+      priceLineVisible: false,      // Hide line on Y-axis
     });
     if (volumeSeries) {
       chart.priceScale('volume-scale').applyOptions({

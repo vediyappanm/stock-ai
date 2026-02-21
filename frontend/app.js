@@ -421,7 +421,9 @@ function renderTVChart(ohlcvData) {
   const volumeSeries = chart.addHistogramSeries({
     color: '#26a69a',
     priceFormat: { type: 'volume' },
-    priceScaleId: 'volume', // don't share scale with price
+    priceScaleId: 'volume',
+    lastValueVisible: false,
+    priceLineVisible: false,
   });
 
   chart.priceScale('volume').applyOptions({

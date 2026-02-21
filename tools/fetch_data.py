@@ -64,7 +64,11 @@ def _normalize_ohlcv(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
     if "Date" not in clean.columns:
         clean["Date"] = clean.index # Last resort
         
-    clean["Date"] = pd.to_datetime(clean["Date"], utc=True).dt.tz_localize(None)
+    # Type-aware date conversion
+    if pd.api.types.is_numeric_dtype(clean["Date"]):
+        clean["Date"] = pd.to_datetime(clean["Date"], unit="s", utc=True).dt.tz_localize(None)
+    else:
+        clean["Date"] = pd.to_datetime(clean["Date"], utc=True).dt.tz_localize(None)
 
     # OHLCV column discovery
     col_map = {
