@@ -10,6 +10,7 @@ from typing import Optional
 from config.settings import settings
 from schemas.response_schemas import ParsedQuery
 from tools.error_handler import ValidationError
+from tools.ticker_validator import auto_correct_ticker, validate_and_suggest_ticker
 
 try:  # pragma: no cover - import availability depends on runtime extras
     from openai import OpenAI
@@ -115,6 +116,12 @@ def parse_query(
         )
 
     resolved_exchange = (exchange or parsed.get("exchange") or settings.default_exchange).strip().upper()
+    
+    # Auto-correct common ticker typos
+    original_stock = stock_name
+    stock_name = auto_correct_ticker(stock_name, resolved_exchange)
+    if stock_name != original_stock:
+        logger.info(f"Ticker auto-corrected: {original_stock} -> {stock_name}")
     if resolved_exchange not in settings.supported_exchanges:
         supported = ", ".join(settings.supported_exchanges)
         raise ValidationError(

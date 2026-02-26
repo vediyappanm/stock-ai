@@ -181,7 +181,8 @@ def fetch_ohlcv_data(ticker_symbol: str, exchange: str, period: str = "2y", **kw
     # 5. yfinance library (Last resort, locally only)
     if yf and not settings.is_dev_mode: # On cloud, this usually fails
         try:
-            ticker_obj = yf.Ticker(ticker_symbol, session=get_yf_session())
+            # Let yfinance handle its own session management
+            ticker_obj = yf.Ticker(ticker_symbol)
             raw = ticker_obj.history(period=period)
             if not raw.empty:
                 clean = _normalize_ohlcv(raw, ticker_symbol)

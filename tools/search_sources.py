@@ -35,14 +35,15 @@ async def search_duckduckgo(query: str, max_results: int = 5) -> list[dict]:
             except ImportError:
                 from duckduckgo_search import DDGS
 
-            # Pin to a stable impersonation profile; fall back gracefully
+            # Use default settings to avoid impersonate issues
             try:
-                with DDGS(proxy=None) as ddgs:
-                    return list(ddgs.text(query, max_results=max_results, timelimit="w"))
-            except TypeError:
-                # Older ddgs versions don't accept proxy kwarg
                 with DDGS() as ddgs:
                     return list(ddgs.text(query, max_results=max_results, timelimit="w"))
+            except Exception as inner_e:
+                # Fallback without timelimit if that fails
+                logger.debug(f"DDG timelimit failed, trying without: {inner_e}")
+                with DDGS() as ddgs:
+                    return list(ddgs.text(query, max_results=max_results))
         except Exception as e:
             logger.debug(f"DDG search error for '{query}': {e}")
             return []

@@ -1676,6 +1676,20 @@ function bindEvents() {
 
   byId("predict-form").addEventListener("submit", (event) => {
     event.preventDefault();
+    
+    // Validate date is not in the past
+    const dateInput = byId("predict-date");
+    if (dateInput && dateInput.value) {
+      const selectedDate = new Date(dateInput.value);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Reset time to compare dates only
+      
+      if (selectedDate < today) {
+        showToast("Target date cannot be in the past. Please select a future date.", "error");
+        return;
+      }
+    }
+    
     runPrediction(false);
   });
   byId("btn-quick").addEventListener("click", () => runPrediction(true));
@@ -1746,11 +1760,22 @@ function bindEvents() {
   }
 }
 
+function setDefaultPredictDate() {
+  const dateInput = byId("predict-date");
+  if (dateInput && !dateInput.value) {
+    // Set default to tomorrow's date
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    dateInput.value = tomorrow.toISOString().split('T')[0];
+  }
+}
+
 function bootstrapApp() {
   bindEvents();
   stampKpiUpdate();
   initWebSocket();
   refreshHealth();
+  setDefaultPredictDate();
 
   const idleRun = () => {
     renderPortfolio();

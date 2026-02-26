@@ -21,11 +21,10 @@ SECTOR_PROXIES = {
 def get_sector_rotation(days: int = 30) -> List[Dict[str, Any]]:
     """Calculate percentage change for major sectors to identify rotation."""
     results = []
-    session = get_yf_session()
     for sector, proxy in SECTOR_PROXIES.items():
         try:
             # yfinance tickers for indices often need ^ prefix
-            df = yf.download(proxy, period=f"{days+10}d", interval="1d", progress=False, session=session)
+            df = yf.download(proxy, period=f"{days+10}d", interval="1d", progress=False)
             if df.empty: continue
             
             df = df.tail(days)
@@ -50,12 +49,11 @@ def get_portfolio_correlation(tickers: List[str]) -> Dict[str, Any]:
         return {"error": "At least 2 tickers required for correlation analysis", "matrix": {}}
     
     returns_data = {}
-    session = get_yf_session()
     for ticker in tickers:
         try:
             # Standardize for yfinance
             symbol = f"{ticker}.NS" if not (ticker.endswith(".NS") or ticker.startswith("^")) else ticker
-            df = yf.download(symbol, period="90d", progress=False, session=session)
+            df = yf.download(symbol, period="90d", progress=False)
             if not df.empty:
                 # Ensure we have a Series, not a single-column DataFrame
                 close_series = df['Close']
@@ -84,9 +82,8 @@ def get_portfolio_correlation(tickers: List[str]) -> Dict[str, Any]:
 def get_risk_impact_analysis(ticker: str, days: int = 120) -> Dict[str, Any]:
     """Compare Buy & Hold vs a simple ATR-based stop strategy."""
     try:
-        session = get_yf_session()
         symbol = f"{ticker}.NS" if not ticker.endswith(".NS") else ticker
-        df = yf.download(symbol, period=f"{days}d", progress=False, session=session)
+        df = yf.download(symbol, period=f"{days}d", progress=False)
         if df.empty: return {}
         
         # Simple ATR Approximation

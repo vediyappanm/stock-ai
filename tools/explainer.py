@@ -15,8 +15,19 @@ def _top_features(feature_importance: Dict[str, float], k: int = 3) -> List[Tupl
 
 
 def _validate_compliance(text: str) -> None:
+    """Validate that explanation doesn't contain forbidden financial advice terms."""
+    import re
+    
     lowered = text.lower()
-    forbidden = [word for word in settings.forbidden_words if word in lowered]
+    forbidden = []
+    
+    # Check for forbidden words as whole words only (not substrings)
+    for word in settings.forbidden_words:
+        # Use word boundaries to match whole words only
+        pattern = r'\b' + re.escape(word) + r'\b'
+        if re.search(pattern, lowered):
+            forbidden.append(word)
+    
     if forbidden:
         raise ValidationError(
             f"Generated explanation contains restricted terminology: {', '.join(forbidden)}",

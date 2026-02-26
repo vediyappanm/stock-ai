@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from datetime import date
 import inspect
+import logging
 from time import perf_counter
 from typing import Any, Dict, MutableMapping
 
@@ -26,13 +27,19 @@ from tools.fundamentals import get_fundamentals, get_financials_table
 # researcher is NOT imported here on purpose — deep_research is triggered
 # explicitly via /api/research, not on every prediction (too slow).
 
+logger = logging.getLogger(__name__)
+
 
 def execute_prediction_pipeline(request: PredictRequest, research_data: Dict[str, Any] | None = None) -> PredictResponse:
     """
     Execute the strict six-step workflow and return full prediction response.
     """
+    from tools.performance_optimizer import perf_tracker, performance_monitor
+    
+    perf_tracker.start_timer("total_prediction")
     context: MutableMapping[str, object] = {"request": request, "research_data": research_data}
 
+    @performance_monitor("step_parse_query")
     def step_parse_query(ctx: MutableMapping[str, object]) -> None:
         req: PredictRequest = ctx["request"]  # type: ignore[assignment]
         parsed = parse_query(
@@ -43,11 +50,13 @@ def execute_prediction_pipeline(request: PredictRequest, research_data: Dict[str
         )
         ctx["parsed"] = parsed
 
+    @performance_monitor("step_resolve_ticker")
     def step_resolve_ticker(ctx: MutableMapping[str, object]) -> None:
         parsed = ctx["parsed"]
         resolved = resolve_ticker(stock=parsed.stock_name, exchange=parsed.exchange)  # type: ignore[attr-defined]
         ctx["resolved"] = resolved
 
+    @performance_monitor("step_fetch_data")
     def step_fetch_data(ctx: MutableMapping[str, object]) -> None:
         req: PredictRequest = ctx["request"]  # type: ignore[assignment]
         resolved = ctx["resolved"]
@@ -60,6 +69,7 @@ def execute_prediction_pipeline(request: PredictRequest, research_data: Dict[str
         ohlcv = fetch_ohlcv_data(**kwargs)
         ctx["ohlcv"] = ohlcv
 
+    @performance_monitor("step_compute_indicators")
     def step_compute_indicators(ctx: MutableMapping[str, object]) -> None:
         ohlcv = ctx["ohlcv"]
         macro_data = fetch_macro_features()
@@ -67,6 +77,7 @@ def execute_prediction_pipeline(request: PredictRequest, research_data: Dict[str
         ctx["indicators"] = indicators
         ctx["macro_data"] = macro_data
 
+    @performance_monitor("step_predict")
     def step_predict(ctx: MutableMapping[str, object]) -> None:
         req: PredictRequest = ctx["request"]  # type: ignore[assignment]
         resolved = ctx["resolved"]
@@ -145,6 +156,10 @@ def execute_prediction_pipeline(request: PredictRequest, research_data: Dict[str
         rf_prediction=prediction.rf_prediction,
         lstm_prediction=prediction.lstm_prediction,
     )
+
+    # Log total prediction time
+    total_time = perf_tracker.end_timer("total_prediction")
+    logger.info(f"🎯 Total prediction completed in {total_time:.0f}ms for {resolved.full_symbol}")
 
     status = workflow_orchestrator.get_workflow_status(workflow_id)
     if status is not None:

@@ -137,8 +137,8 @@ def get_fundamentals(ticker: str, exchange: str = "NSE") -> Dict[str, Any]:
     # 3. Try yfinance (Last resort - likely to fail on cloud)
     try:
         logger.info("Fundamentals: yfinance last resort for %s", symbol)
-        session = get_yf_session()
-        stock = yf.Ticker(symbol, session=session)
+        # Let yfinance handle its own session management
+        stock = yf.Ticker(symbol)
         info = stock.info
         if info and ("longName" in info or "shortName" in info):
             result = {
@@ -176,8 +176,8 @@ def get_financials_table(ticker: str, exchange: str = "NSE") -> List[Dict[str, A
 
     try:
         logger.info("Financials Table: fetching for %s", symbol)
-        session = get_yf_session()
-        stock = yf.Ticker(symbol, session=session)
+        # Let yfinance handle its own session management
+        stock = yf.Ticker(symbol)
         df = stock.financials
         if df is not None and not df.empty:
             table = []

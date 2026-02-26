@@ -208,6 +208,43 @@ async def health():
     return get_health_status()
 
 
+@app.get("/api/performance")
+async def get_performance_stats():
+    """Get performance statistics for monitoring prediction speed."""
+    from tools.performance_optimizer import perf_tracker
+    
+    stats = perf_tracker.get_stats()
+    
+    # Add system health info
+    try:
+        import psutil
+        import os
+        
+        system_info = {
+            "cpu_percent": psutil.cpu_percent(interval=0.1),
+            "memory_percent": psutil.virtual_memory().percent,
+            "disk_usage": psutil.disk_usage('/').percent if os.name != 'nt' else psutil.disk_usage('C:').percent,
+            "process_count": len(psutil.pids())
+        }
+    except ImportError:
+        system_info = {"error": "psutil not available"}
+    
+    try:
+        from pathlib import Path
+        cache_info = {
+            "models_cached": len(list(Path(".cache/models").glob("*"))) if Path(".cache/models").exists() else 0,
+            "cache_size_mb": sum(f.stat().st_size for f in Path(".cache").rglob("*") if f.is_file()) / (1024*1024) if Path(".cache").exists() else 0
+        }
+    except Exception:
+        cache_info = {"error": "cache info unavailable"}
+    
+    return {
+        "performance_stats": stats,
+        "system_info": system_info,
+        "cache_info": cache_info
+    }
+
+
 @app.websocket("/ws/stream")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -394,6 +431,14 @@ async def get_chart_data(
     exchange: str = "NSE",
     period: str = Query(default="2y"),
 ):
+    from tools.ticker_validator import auto_correct_ticker
+    
+    # Auto-correct ticker typos
+    corrected_ticker = auto_correct_ticker(ticker, exchange)
+    if corrected_ticker != ticker:
+        logger.info(f"Chart data: ticker auto-corrected {ticker} -> {corrected_ticker}")
+        ticker = corrected_ticker
+    
     normalized_period = period.strip().lower()
     allowed_periods = {value.lower() for value in settings.allowed_chart_periods}
     if normalized_period not in allowed_periods:

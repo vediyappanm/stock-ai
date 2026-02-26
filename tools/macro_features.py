@@ -119,7 +119,11 @@ def merge_macro_features(ohlcv: pd.DataFrame, macro: pd.DataFrame | None = None)
     ohlcv_copy["Date"] = pd.to_datetime(ohlcv_copy["Date"])
     macro["Date"] = pd.to_datetime(macro["Date"])
 
-    merged = ohlcv_copy.merge(macro[["Date", "VIX", "Yield_10Y", "FedRate"]], on="Date", how="left")
-    merged[["VIX", "Yield_10Y", "FedRate"]] = merged[["VIX", "Yield_10Y", "FedRate"]].ffill().fillna(0.0)
+    macro_cols = ["Date", "VIX", "Yield_10Y", "FedRate", "Yield_2Y", "YieldCurveSlope", "VIXMomentum"]
+    available_cols = [c for c in macro_cols if c in macro.columns]
+    merged = ohlcv_copy.merge(macro[available_cols], on="Date", how="left")
+    
+    fill_cols = [c for c in available_cols if c != "Date"]
+    merged[fill_cols] = merged[fill_cols].ffill().fillna(0.0)
 
     return merged
