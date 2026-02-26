@@ -9,10 +9,8 @@ on:
 jobs:
   archon:
     if: |
-      contains(github.event.comment.body, ' /archon') ||
-      startsWith(github.event.comment.body, '/archon') ||
-      contains(github.event.comment.body, ' /ac') ||
-      startsWith(github.event.comment.body, '/ac')
+      contains(github.event.comment.body, '/oc') ||
+      contains(github.event.comment.body, '/opencode')
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -21,13 +19,14 @@ jobs:
       issues: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
+          fetch-depth: 1
           persist-credentials: false
 
       - name: Run archon
-        uses: anomalyco/archon-action@v1
+        uses: anomalyco/opencode/github@latest
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         with:
-          model: openrouter/deepseek/deepseek-v3-base:free
+          model: anthropic/claude-sonnet-4-20250514
