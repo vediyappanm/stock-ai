@@ -9,24 +9,27 @@ on:
 jobs:
   archon:
     if: |
-      contains(github.event.comment.body, '/oc') ||
-      contains(github.event.comment.body, '/opencode')
+      contains(github.event.comment.body, ' /archon') ||
+      startsWith(github.event.comment.body, '/archon') ||
+      contains(github.event.comment.body, ' /ac') ||
+      startsWith(github.event.comment.body, '/ac')
     runs-on: ubuntu-latest
     permissions:
       id-token: write
-      contents: read
-      pull-requests: read
-      issues: read
+      contents: write        # ✅ needs write to push commits
+      pull-requests: write   # ✅ needs write to create PRs
+      issues: write          # ✅ needs write to add comments
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4   # ✅ correct version
         with:
-          fetch-depth: 1
-          persist-credentials: false
+          fetch-depth: 0
 
       - name: Run archon
-        uses: anomalyco/opencode/github@latest
+        uses: vediyappanm/pro-gitops/github@main  # ✅ YOUR working fork
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         with:
-          model: anthropic/claude-sonnet-4-20250514
+          model: openrouter/deepseek/deepseek-v3-base:free
+          use_github_token: "true"
